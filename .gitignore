@@ -1,0 +1,14 @@
+# env files — never commit real values
+backend/.env
+frontend/.env
+
+# Go
+backend/vendor/
+
+# Node
+frontend/node_modules/
+frontend/dist/
+frontend/dist-widget/
+
+# OS
+.DS_Store
