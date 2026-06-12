@@ -1,10 +1,4 @@
 {
-  "builds": [
-    { "src": "api/health/index.go",       "use": "@vercel/go" },
-    { "src": "api/chat/index.go",         "use": "@vercel/go" },
-    { "src": "api/leads/index.go",        "use": "@vercel/go" },
-    { "src": "api/leads/detail/index.go", "use": "@vercel/go" }
-  ],
   "routes": [
     { "src": "/api/health",        "dest": "/api/health/index.go" },
     { "src": "/api/chat",          "dest": "/api/chat/index.go" },
