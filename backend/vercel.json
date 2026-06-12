@@ -1,9 +1,9 @@
 {
   "functions": {
-    "api/health/index.go": { "runtime": "vercel-go@3.x" },
-    "api/chat/index.go":   { "runtime": "vercel-go@3.x" },
-    "api/leads/index.go":  { "runtime": "vercel-go@3.x" },
-    "api/leads/detail/index.go": { "runtime": "vercel-go@3.x" }
+    "api/health/index.go":      { "runtime": "@vercel/go" },
+    "api/chat/index.go":        { "runtime": "@vercel/go" },
+    "api/leads/index.go":       { "runtime": "@vercel/go" },
+    "api/leads/detail/index.go":{ "runtime": "@vercel/go" }
   },
   "routes": [
     { "src": "/api/health",        "dest": "/api/health/index.go" },
@@ -15,7 +15,7 @@
     {
       "source": "/api/(.*)",
       "headers": [
-        { "key": "Access-Control-Allow-Origin", "value": "*" },
+        { "key": "Access-Control-Allow-Origin",  "value": "*" },
         { "key": "Access-Control-Allow-Methods", "value": "GET, POST, OPTIONS" },
         { "key": "Access-Control-Allow-Headers", "value": "Content-Type" }
       ]
