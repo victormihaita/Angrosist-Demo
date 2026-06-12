@@ -11,7 +11,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/angrosist/demo/internal/domain"
+	"github.com/angrosist/demo/pkg/domain"
 )
 
 // ErrNotFound is returned when the CUI does not exist in ANAF.

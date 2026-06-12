@@ -3,8 +3,8 @@ package usecases
 import (
 	"context"
 
-	"github.com/angrosist/demo/internal/domain"
-	"github.com/angrosist/demo/internal/ports"
+	"github.com/angrosist/demo/pkg/domain"
+	"github.com/angrosist/demo/pkg/ports"
 )
 
 type LeadUseCase struct {

@@ -3,9 +3,9 @@ package handler
 import (
 	"net/http"
 
-	httputil "github.com/angrosist/demo/internal/adapters/http"
-	"github.com/angrosist/demo/internal/app"
-	"github.com/angrosist/demo/internal/domain"
+	httputil "github.com/angrosist/demo/pkg/adapters/http"
+	"github.com/angrosist/demo/pkg/app"
+	"github.com/angrosist/demo/pkg/domain"
 )
 
 func Handler(w http.ResponseWriter, r *http.Request) {

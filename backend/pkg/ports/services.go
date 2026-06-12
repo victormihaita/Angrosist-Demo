@@ -3,7 +3,7 @@ package ports
 import (
 	"context"
 
-	"github.com/angrosist/demo/internal/domain"
+	"github.com/angrosist/demo/pkg/domain"
 )
 
 // CompanyVerifier verifies a Romanian company by CUI via an external service.

@@ -9,7 +9,7 @@ import (
 	healthhandler "github.com/angrosist/demo/api/health"
 	leadshandler  "github.com/angrosist/demo/api/leads"
 	detailhandler "github.com/angrosist/demo/api/leads/detail"
-	httputil      "github.com/angrosist/demo/internal/adapters/http"
+	httputil      "github.com/angrosist/demo/pkg/adapters/http"
 )
 
 func cors(next http.HandlerFunc) http.HandlerFunc {

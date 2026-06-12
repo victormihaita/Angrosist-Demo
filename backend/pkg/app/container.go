@@ -8,10 +8,10 @@ import (
 
 	"github.com/joho/godotenv"
 
-	"github.com/angrosist/demo/internal/adapters/anaf"
-	"github.com/angrosist/demo/internal/adapters/gemini"
-	pgadapter "github.com/angrosist/demo/internal/adapters/postgres"
-	"github.com/angrosist/demo/internal/usecases"
+	"github.com/angrosist/demo/pkg/adapters/anaf"
+	"github.com/angrosist/demo/pkg/adapters/gemini"
+	pgadapter "github.com/angrosist/demo/pkg/adapters/postgres"
+	"github.com/angrosist/demo/pkg/usecases"
 )
 
 const DBTimeout = 5 * time.Second

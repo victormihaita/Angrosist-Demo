@@ -5,8 +5,8 @@ import (
 	"net/http"
 	"time"
 
-	httputil "github.com/angrosist/demo/internal/adapters/http"
-	"github.com/angrosist/demo/internal/app"
+	httputil "github.com/angrosist/demo/pkg/adapters/http"
+	"github.com/angrosist/demo/pkg/app"
 )
 
 func Handler(w http.ResponseWriter, r *http.Request) {

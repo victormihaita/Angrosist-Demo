@@ -4,9 +4,9 @@ import (
 	"encoding/json"
 	"net/http"
 
-	httputil "github.com/angrosist/demo/internal/adapters/http"
-	"github.com/angrosist/demo/internal/app"
-	"github.com/angrosist/demo/internal/usecases"
+	httputil "github.com/angrosist/demo/pkg/adapters/http"
+	"github.com/angrosist/demo/pkg/app"
+	"github.com/angrosist/demo/pkg/usecases"
 )
 
 func Handler(w http.ResponseWriter, r *http.Request) {

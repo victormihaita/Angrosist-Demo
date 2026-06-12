@@ -3,7 +3,7 @@ package postgres
 import (
 	"context"
 
-	"github.com/angrosist/demo/internal/domain"
+	"github.com/angrosist/demo/pkg/domain"
 )
 
 type CompanyRepo struct{}
