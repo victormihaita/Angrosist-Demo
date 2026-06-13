@@ -27,7 +27,9 @@ function resolveContent(m: import('@/lib/api').TranscriptMessage): string {
   if (m.content) return m.content
   if (m.role === 'model' && m.tool_calls) {
     try {
-      const parts: unknown[] = JSON.parse(atob(m.tool_calls))
+      const bytes = Uint8Array.from(atob(m.tool_calls), c => c.charCodeAt(0))
+      const json = new TextDecoder('utf-8').decode(bytes)
+      const parts: unknown[] = JSON.parse(json)
       return parts.filter((p): p is string => typeof p === 'string').join('')
     } catch {
       return ''
