@@ -1,5 +1,4 @@
-import { useState, useRef } from 'react'
-import { ScrollArea } from '@/components/ui/scroll-area'
+import { useState, useRef, useEffect } from 'react'
 import { MessageList, type Message } from '@/components/chat/MessageList'
 import { MessageInput } from '@/components/chat/MessageInput'
 import { sendMessage } from '@/lib/api'
@@ -16,6 +15,11 @@ export function ChatPage() {
   const [input, setInput] = useState('')
   const [loading, setLoading] = useState(false)
   const convIdRef = useRef<string | null>(sessionStorage.getItem(CONV_KEY))
+  const bottomRef = useRef<HTMLDivElement>(null)
+
+  useEffect(() => {
+    bottomRef.current?.scrollIntoView({ behavior: 'smooth' })
+  }, [messages, loading])
 
   async function handleSend() {
     const text = input.trim()
@@ -41,11 +45,18 @@ export function ChatPage() {
   }
 
   return (
-    <div className="flex flex-1 overflow-hidden justify-center">
-      <div className="flex flex-col w-full max-w-2xl">
-        <ScrollArea className="flex-1">
+    // h-full fills the flex-1 overflow-hidden main from App
+    <div className="flex flex-col h-full">
+      {/* Scrollable messages */}
+      <div className="flex-1 overflow-y-auto">
+        <div className="max-w-2xl mx-auto px-4">
           <MessageList messages={messages} loading={loading} />
-        </ScrollArea>
+          <div ref={bottomRef} />
+        </div>
+      </div>
+
+      {/* Input — stays above keyboard on mobile thanks to h-dvh on root */}
+      <div className="shrink-0 max-w-2xl w-full mx-auto">
         <MessageInput
           value={input}
           onChange={setInput}

@@ -13,13 +13,19 @@ function AppLayout() {
   const isChatPage = pathname === '/chat'
 
   return (
-    <div className="flex flex-col min-h-screen">
+    // h-dvh shrinks when the virtual keyboard appears on mobile,
+    // keeping the input pinned above it.
+    <div className="flex flex-col h-dvh">
       <Nav />
-      <main className={isChatPage ? 'flex flex-col flex-1 overflow-hidden' : 'flex flex-col flex-1'}>
+      <main className={
+        isChatPage
+          ? 'flex flex-col flex-1 overflow-hidden'
+          : 'flex flex-col flex-1 overflow-y-auto'
+      }>
         <Routes>
-          <Route path="/"            element={<LandingPage />} />
-          <Route path="/chat"        element={<ChatPage />} />
-          <Route path="/dashboard"   element={<DashboardPage />} />
+          <Route path="/"              element={<LandingPage />} />
+          <Route path="/chat"          element={<ChatPage />} />
+          <Route path="/dashboard"     element={<DashboardPage />} />
           <Route path="/dashboard/:id" element={<LeadDetailPage />} />
         </Routes>
       </main>

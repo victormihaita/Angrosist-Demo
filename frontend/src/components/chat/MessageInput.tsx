@@ -21,7 +21,7 @@ export function MessageInput({ value, onChange, onSend, disabled }: Props) {
   }
 
   return (
-    <div className="flex gap-2 px-4 py-3 border-t bg-background">
+    <div className="flex gap-2 px-4 py-3 border-t bg-background pb-[max(12px,env(safe-area-inset-bottom))]">
       <Textarea
         ref={ref}
         value={value}
