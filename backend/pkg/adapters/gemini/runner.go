@@ -214,6 +214,9 @@ func (r *Runner) toolVerifyCompany(ctx context.Context, conv *domain.Conversatio
 
 func (r *Runner) toolSaveLead(ctx context.Context, conv *domain.Conversation, args map[string]any) (map[string]any, error) {
 	cui, _ := args["cui"].(string)
+	phone := strArg(args["phone"])
+	email := strArg(args["email"])
+	qty := extractFloat(args["quantity"])
 
 	company, err := r.companyRepo.GetByCUI(ctx, cui)
 	if err != nil {
@@ -226,17 +229,47 @@ func (r *Runner) toolSaveLead(ctx context.Context, conv *domain.Conversation, ar
 		if upsertErr := r.companyRepo.Upsert(ctx, company); upsertErr != nil {
 			return nil, fmt.Errorf("upsert company: %w", upsertErr)
 		}
-		// Reload to get the DB-assigned ID.
 		company, err = r.companyRepo.GetByCUI(ctx, cui)
 		if err != nil {
 			return nil, fmt.Errorf("company not found after upsert: %w", err)
 		}
 	}
 
+	req := &domain.SourcingRequest{
+		ProductName:      strArg(args["product_name"]),
+		Quantity:         qty,
+		Unit:             strArg(args["unit"]),
+		DeliveryLocation: strArg(args["delivery_location"]),
+	}
+
+	// If a lead already exists for this conversation, update it in place.
+	existingLead, err := r.leadRepo.GetByConversationID(ctx, conv.ID)
+	if err == nil {
+		contact := &domain.Contact{
+			ID:        existingLead.ContactID,
+			CompanyID: company.ID,
+			Phone:     phone,
+			Email:     email,
+		}
+		if err := r.contactRepo.Update(ctx, contact); err != nil {
+			return nil, fmt.Errorf("update contact: %w", err)
+		}
+		if err := r.leadRepo.UpdateCompanyContact(ctx, existingLead.ID, company.ID, contact.ID); err != nil {
+			return nil, fmt.Errorf("update lead: %w", err)
+		}
+		req.LeadID = existingLead.ID
+		if err := r.sourcingRepo.UpdateByLeadID(ctx, req); err != nil {
+			return nil, fmt.Errorf("update sourcing request: %w", err)
+		}
+		r.updateExtracted(ctx, conv, req, phone, email, args)
+		return map[string]any{"saved": true, "lead_id": existingLead.ID, "updated": true}, nil
+	}
+
+	// No existing lead — create everything fresh.
 	contact := &domain.Contact{
 		CompanyID: company.ID,
-		Phone:     strArg(args["phone"]),
-		Email:     strArg(args["email"]),
+		Phone:     phone,
+		Email:     email,
 	}
 	if err := r.contactRepo.Create(ctx, contact); err != nil {
 		return nil, fmt.Errorf("create contact: %w", err)
@@ -252,19 +285,16 @@ func (r *Runner) toolSaveLead(ctx context.Context, conv *domain.Conversation, ar
 		return nil, fmt.Errorf("create lead: %w", err)
 	}
 
-	qty := extractFloat(args["quantity"])
-	req := &domain.SourcingRequest{
-		LeadID:           lead.ID,
-		ProductName:      strArg(args["product_name"]),
-		Quantity:         qty,
-		Unit:             strArg(args["unit"]),
-		DeliveryLocation: strArg(args["delivery_location"]),
-	}
+	req.LeadID = lead.ID
 	if err := r.sourcingRepo.Create(ctx, req); err != nil {
 		return nil, fmt.Errorf("create sourcing request: %w", err)
 	}
 
-	// Update extracted and mark confirmed
+	r.updateExtracted(ctx, conv, req, phone, email, args)
+	return map[string]any{"saved": true, "lead_id": lead.ID}, nil
+}
+
+func (r *Runner) updateExtracted(ctx context.Context, conv *domain.Conversation, req *domain.SourcingRequest, phone, email string, args map[string]any) {
 	extracted := conv.Extracted
 	if extracted == nil {
 		extracted = make(map[string]any)
@@ -273,12 +303,11 @@ func (r *Runner) toolSaveLead(ctx context.Context, conv *domain.Conversation, ar
 	extracted["quantity"] = args["quantity"]
 	extracted["unit"] = req.Unit
 	extracted["delivery_location"] = req.DeliveryLocation
-	extracted["phone"] = contact.Phone
-	extracted["email"] = contact.Email
+	extracted["phone"] = phone
+	extracted["email"] = email
 	_ = r.convRepo.UpdateExtracted(ctx, conv.ID, extracted)
 	_ = r.convRepo.UpdateState(ctx, conv.ID, domain.StateConfirmed)
-
-	return map[string]any{"saved": true, "lead_id": lead.ID}, nil
+	conv.Extracted = extracted
 }
 
 func (r *Runner) buildHistory(ctx context.Context, conversationID string) ([]*genai.Content, error) {

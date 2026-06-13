@@ -37,44 +37,47 @@ export function LeadTable({ leads }: Props) {
 
   return (
     <div className="rounded-lg border overflow-hidden">
-      <Table>
-        <TableHeader>
-          <TableRow>
-            <TableHead>Companie</TableHead>
-            <TableHead>CUI</TableHead>
-            <TableHead>Produs</TableHead>
-            <TableHead>Cantitate</TableHead>
-            <TableHead>Locație</TableHead>
-            <TableHead>Status</TableHead>
-            <TableHead>Dată</TableHead>
-          </TableRow>
-        </TableHeader>
-        <TableBody>
-          {leads.map((lead) => (
-            <TableRow
-              key={lead.id}
-              className="cursor-pointer"
-              onClick={() => navigate(`/dashboard/${lead.id}`)}
-            >
-              <TableCell className="font-medium">{lead.company_name || '—'}</TableCell>
-              <TableCell className="font-mono text-xs text-muted-foreground">{lead.cui || '—'}</TableCell>
-              <TableCell>{lead.product_name || '—'}</TableCell>
-              <TableCell>
-                {lead.quantity != null ? `${lead.quantity} ${lead.unit}` : '—'}
-              </TableCell>
-              <TableCell>{lead.delivery_location || '—'}</TableCell>
-              <TableCell>
-                <Badge variant={STATUS_VARIANT[lead.status] ?? 'secondary'}>
-                  {STATUS_LABEL[lead.status] ?? lead.status}
-                </Badge>
-              </TableCell>
-              <TableCell className="text-muted-foreground text-xs">
-                {new Date(lead.created_at).toLocaleDateString('ro-RO')}
-              </TableCell>
+      {/* overflow-x-auto keeps horizontal scroll inside the card, not the page */}
+      <div className="overflow-x-auto">
+        <Table className="min-w-[640px]">
+          <TableHeader>
+            <TableRow>
+              <TableHead>Companie</TableHead>
+              <TableHead>CUI</TableHead>
+              <TableHead>Produs</TableHead>
+              <TableHead>Cantitate</TableHead>
+              <TableHead>Locație</TableHead>
+              <TableHead>Status</TableHead>
+              <TableHead>Dată</TableHead>
             </TableRow>
-          ))}
-        </TableBody>
-      </Table>
+          </TableHeader>
+          <TableBody>
+            {leads.map((lead) => (
+              <TableRow
+                key={lead.id}
+                className="cursor-pointer"
+                onClick={() => navigate(`/dashboard/${lead.id}`)}
+              >
+                <TableCell className="font-medium">{lead.company_name || '—'}</TableCell>
+                <TableCell className="font-mono text-xs text-muted-foreground">{lead.cui || '—'}</TableCell>
+                <TableCell>{lead.product_name || '—'}</TableCell>
+                <TableCell>
+                  {lead.quantity != null ? `${lead.quantity} ${lead.unit}` : '—'}
+                </TableCell>
+                <TableCell>{lead.delivery_location || '—'}</TableCell>
+                <TableCell>
+                  <Badge variant={STATUS_VARIANT[lead.status] ?? 'secondary'}>
+                    {STATUS_LABEL[lead.status] ?? lead.status}
+                  </Badge>
+                </TableCell>
+                <TableCell className="text-muted-foreground text-xs whitespace-nowrap">
+                  {new Date(lead.created_at).toLocaleDateString('ro-RO')}
+                </TableCell>
+              </TableRow>
+            ))}
+          </TableBody>
+        </Table>
+      </div>
     </div>
   )
 }

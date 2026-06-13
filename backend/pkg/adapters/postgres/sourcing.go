@@ -18,3 +18,12 @@ func (r *SourcingRepo) Create(ctx context.Context, req *domain.SourcingRequest) 
 	`, req.LeadID, req.ProductName, req.Quantity, nullStr(req.Unit), nullStr(req.DeliveryLocation))
 	return row.Scan(&req.ID, &req.CreatedAt)
 }
+
+func (r *SourcingRepo) UpdateByLeadID(ctx context.Context, req *domain.SourcingRequest) error {
+	_, err := GetPool().Exec(ctx, `
+		UPDATE sourcing_requests
+		SET product_name = $2, quantity = $3, unit = $4, delivery_location = $5
+		WHERE lead_id = $1
+	`, req.LeadID, req.ProductName, req.Quantity, nullStr(req.Unit), nullStr(req.DeliveryLocation))
+	return err
+}

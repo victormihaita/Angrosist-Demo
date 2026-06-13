@@ -69,7 +69,7 @@ export function LeadDetail({ lead }: Props) {
     .filter((m) => m.content)
 
   return (
-    <div className="flex flex-col h-full">
+    <div>
       <div className="flex items-center gap-3 mb-6">
         <Button variant="ghost" size="sm" onClick={() => navigate('/dashboard')}>
           <ArrowLeft className="h-4 w-4 mr-1" />
@@ -81,7 +81,7 @@ export function LeadDetail({ lead }: Props) {
         </Badge>
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 flex-1 min-h-0">
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 items-stretch">
         {/* Left: extracted fields */}
         <Card>
           <CardHeader className="pb-3">
@@ -103,21 +103,19 @@ export function LeadDetail({ lead }: Props) {
           </CardContent>
         </Card>
 
-        {/* Right: transcript */}
-        <Card className="flex flex-col min-h-0">
+        {/* Right: transcript — capped to viewport, scrolls internally */}
+        <Card className="flex flex-col">
           <CardHeader className="pb-3 shrink-0">
             <CardTitle className="text-sm font-medium text-muted-foreground uppercase tracking-wide">
               Transcriere conversație
             </CardTitle>
           </CardHeader>
-          <CardContent className="flex-1 min-h-0 p-0">
-            <ScrollArea className="h-full max-h-[420px]">
-              {chatMessages.length > 0 ? (
-                <MessageList messages={chatMessages} readonly />
-              ) : (
-                <p className="text-sm text-muted-foreground px-4 py-3">Fără mesaje.</p>
-              )}
-            </ScrollArea>
+          <CardContent className="p-0 overflow-y-auto max-h-[calc(100vh-320px)]">
+            {chatMessages.length > 0 ? (
+              <MessageList messages={chatMessages} readonly />
+            ) : (
+              <p className="text-sm text-muted-foreground px-4 py-3">Fără mesaje.</p>
+            )}
           </CardContent>
         </Card>
       </div>

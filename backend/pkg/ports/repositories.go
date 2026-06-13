@@ -20,6 +20,8 @@ type MessageRepo interface {
 
 type LeadRepo interface {
 	Create(ctx context.Context, lead *domain.Lead) error
+	GetByConversationID(ctx context.Context, convID string) (*domain.Lead, error)
+	UpdateCompanyContact(ctx context.Context, leadID, companyID, contactID string) error
 	List(ctx context.Context) ([]*domain.LeadSummary, error)
 	GetByID(ctx context.Context, id string) (*domain.LeadDetail, error)
 }
@@ -31,8 +33,10 @@ type CompanyRepo interface {
 
 type ContactRepo interface {
 	Create(ctx context.Context, contact *domain.Contact) error
+	Update(ctx context.Context, contact *domain.Contact) error
 }
 
 type SourcingRepo interface {
 	Create(ctx context.Context, req *domain.SourcingRequest) error
+	UpdateByLeadID(ctx context.Context, req *domain.SourcingRequest) error
 }

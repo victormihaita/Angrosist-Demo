@@ -19,6 +19,28 @@ func (r *LeadRepo) Create(ctx context.Context, lead *domain.Lead) error {
 	return row.Scan(&lead.ID, &lead.CreatedAt)
 }
 
+func (r *LeadRepo) GetByConversationID(ctx context.Context, convID string) (*domain.Lead, error) {
+	row := GetPool().QueryRow(ctx, `
+		SELECT id::text, conversation_id::text,
+		       COALESCE(company_id::text, ''),
+		       COALESCE(contact_id::text, ''),
+		       status, created_at
+		FROM leads WHERE conversation_id = $1::uuid
+	`, convID)
+	var l domain.Lead
+	if err := row.Scan(&l.ID, &l.ConversationID, &l.CompanyID, &l.ContactID, &l.Status, &l.CreatedAt); err != nil {
+		return nil, err
+	}
+	return &l, nil
+}
+
+func (r *LeadRepo) UpdateCompanyContact(ctx context.Context, leadID, companyID, contactID string) error {
+	_, err := GetPool().Exec(ctx, `
+		UPDATE leads SET company_id = $2, contact_id = $3 WHERE id = $1
+	`, leadID, nullStr(companyID), nullStr(contactID))
+	return err
+}
+
 func (r *LeadRepo) List(ctx context.Context) ([]*domain.LeadSummary, error) {
 	rows, err := GetPool().Query(ctx, `
 		SELECT
