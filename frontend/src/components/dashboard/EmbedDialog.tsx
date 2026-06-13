@@ -36,7 +36,7 @@ export function EmbedDialog() {
       </Button>
 
       <Dialog open={open} onOpenChange={setOpen}>
-        <DialogContent className="max-w-xl">
+        <DialogContent className="w-[calc(100vw-2rem)] max-w-xl rounded-xl">
           <DialogHeader>
             <DialogTitle>Embed Chat Widget</DialogTitle>
             <DialogDescription>
@@ -45,7 +45,7 @@ export function EmbedDialog() {
           </DialogHeader>
 
           <div className="relative mt-2">
-            <pre className="bg-muted rounded-lg p-4 text-xs overflow-x-auto leading-relaxed">
+            <pre className="bg-muted rounded-lg p-4 pr-10 text-xs leading-relaxed whitespace-pre-wrap break-all">
               {embedCode}
             </pre>
             <Button
@@ -54,7 +54,9 @@ export function EmbedDialog() {
               className="absolute top-2 right-2 h-7 w-7"
               onClick={copy}
             >
-              {copied ? <Check className="h-3.5 w-3.5 text-green-500" /> : <Copy className="h-3.5 w-3.5" />}
+              {copied
+                ? <Check className="h-3.5 w-3.5 text-green-500" />
+                : <Copy className="h-3.5 w-3.5" />}
             </Button>
           </div>
 
