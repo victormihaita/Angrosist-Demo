@@ -27,7 +27,13 @@ export function LandingPage() {
     import('../../widget/widget-entry').then(() => {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       ;(window as any).AngrosistChat?.init({ apiUrl })
+      const el = document.getElementById('__angrosist_widget__')
+      if (el) el.style.display = 'flex'
     })
+    return () => {
+      const el = document.getElementById('__angrosist_widget__')
+      if (el) el.style.display = 'none'
+    }
   }, [])
 
   return (
