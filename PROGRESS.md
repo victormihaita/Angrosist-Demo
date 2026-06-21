@@ -3,10 +3,9 @@
 > **This is the file to open to see what's done, what's happening, and what's next.** Updated and committed after every unit of work. The full task list lives in `docs/BUILD_PLAN.md`; this is the running status on top of it.
 
 **Last updated:** 2026-06-21
-**Current milestone:** M1 — Foundation (in progress)
-**Done this run:** repo refactored to /cmd + /internal; full local Docker stack added.
-**Next task:** M1 schema migrations + repoint ANAF adapter to DemoANAF; then Terraform + CI/CD as code (provisioning deferred).
-**Branches:** `main` = the **Vercel demo** (frozen at pre-today `b5d1b3d`, do not push WIP here). `develop` = **active build** (all today's work; this is where we work). Push auth fixed (gh active account → `victormihaita`).
+**Current milestone:** M1 — Foundation ✅ (buildable scope done; provisioning + Meta verification are owner actions)
+**Next milestone:** M2 — Agent core + web widget (channel-agnostic flow engine, LLM port + Claude adapter, async worker, WS/SSE widget)
+**Branches:** `main` = the **Vercel demo** (frozen at pre-today `b5d1b3d`, do not push WIP here). `develop` = **active build** (this is where we work). Push auth fixed (gh active account → `victormihaita`).
 
 ---
 
@@ -15,8 +14,8 @@
 1. ✅ **Setup** — Claude OS, hard rules, BUILD_PLAN, specs, MCP, hooks _(done & merged)_
 2. ✅ **User journeys doc** — confirm the final outcome _(done)_
 3. ✅ **M0.5 — Demo hardening** — config hygiene, CORS, validation, error boundary, tests _(done; H3→M2)_
-4. ⏳ **M1 — Foundation** — refactor to `/cmd`+`/internal`, GCP/Terraform, CI/CD, full schema _(next; cloud epics need your GCP access)_
-5. ⬜ **M2 — Agent core + web widget** — channel-agnostic agent, async runtime, Claude LLM, WS/SSE
+4. ✅ **M1 — Foundation** — refactor done, full Phase-1 schema (009-023, tested), Terraform + CI/CD as code (dormant), local Docker. _ANAF repoint→M3; GCP provisioning + Meta verification = owner actions._
+5. ⏳ **M2 — Agent core + web widget** — channel-agnostic agent, async runtime, Claude LLM, WS/SSE _(next)_
 6. ⬜ **M3 — Angrosist + dashboard** — Angrosist LIVE end-to-end
 7. ⬜ **M4 — WhatsApp + PalletClearance + photos + i18n**
 8. ⬜ **M5 — KPIs, GDPR/security, backup, testing, handover**
@@ -54,6 +53,8 @@ Legend: ✅ done · ⏳ in progress · ⬜ not started
 
 ## Changelog (newest first)
 
+- **2026-06-21** — **M1 cloud-ready (deferred provisioning).** `deploy/terraform/`: 8 modules (Artifact Registry, IAM SAs, Secret Manager, Cloud SQL, GCS, Cloud Run, Cloud Tasks, Cloud Scheduler) composed per env (dev/staging/prod); EU region, least-privilege, no secret values. `.github/workflows/`: CI runs on push; GCP deploy jobs DORMANT (workflow_dispatch + `DEPLOY_ENABLED` guard) via Workload Identity Federation. Dockerfile now builds the worker too. Validated with tofu + actionlint. **M1 buildable scope complete.**
+- **2026-06-21** — **Full Phase-1 schema** (migrations 009-023): lookups, users, categories, company_verifications/financials, consents, listings, buyer_profiles, documents, activity_logs, templates; enriched companies/contacts/leads/etc.; all indexes + GDPR cascade. Tested clean apply + idempotent on scratch Postgres.
 - **2026-06-21** — **Branch split.** `main` reverted to `b5d1b3d` (pre-today) so Vercel keeps serving the stable demo; all today's work moved to the new `develop` branch, which is now the active build line. `origin` updated to match.
 - **2026-06-21** — **Local Docker stack** added: `docker compose up --build` runs Postgres + migrations + backend + frontend (no GCP needed). Backend/frontend Dockerfiles, nginx SPA config, compose with healthcheck + migrate-before-backend ordering, root `.env.example`. Compose config validated (daemon was down, so no build run here — run locally).
 - **2026-06-21** — **Backend refactored** to the target `/cmd` + `/internal` layout (M1 Epic 1.1): pkg→internal moves via git mv, `CompanyVerifier`→`CompanyDataProvider`, `cmd/worker` skeleton. Gemini kept whole (LLM-port split is M2). Build/vet/test green.
