@@ -5,6 +5,7 @@ import (
 	"log"
 	"os"
 	"strconv"
+	"strings"
 	"sync"
 	"time"
 
@@ -13,7 +14,10 @@ import (
 	"github.com/angrosist/demo/internal/agent"
 	claudellm "github.com/angrosist/demo/internal/agent/llm/claude"
 	geminillm "github.com/angrosist/demo/internal/agent/llm/gemini"
+	"github.com/angrosist/demo/internal/api/authhttp"
+	"github.com/angrosist/demo/internal/auth"
 	"github.com/angrosist/demo/internal/broker"
+	"github.com/angrosist/demo/internal/domain"
 	pgadapter "github.com/angrosist/demo/internal/persistence/postgres"
 	"github.com/angrosist/demo/internal/ports"
 	"github.com/angrosist/demo/internal/queue"
@@ -48,6 +52,10 @@ type Container struct {
 	// to it. In-process (single-instance) today; swap a Redis adapter for multi-
 	// instance prod behind the same port.
 	Broker ports.Broker
+
+	// Auth is the staff/admin authentication + RBAC HTTP service: login handler,
+	// admin user-management handlers, and the bearer-token / role middleware.
+	Auth *authhttp.Service
 }
 
 var (
@@ -67,7 +75,15 @@ func Init() {
 		contactRepo := pgadapter.NewContactRepo()
 		leadRepo := pgadapter.NewLeadRepo()
 		sourcingRepo := pgadapter.NewSourcingRepo()
+		userRepo := pgadapter.NewUserRepo()
 		verifier := newVerifier()
+
+		// Auth: HS256 JWT issuer (fail fast if JWT_SECRET is unset) + user repo.
+		tokens, err := auth.NewTokenIssuer(os.Getenv("JWT_SECRET"))
+		if err != nil {
+			log.Fatalf("container: %v", err)
+		}
+		authSvc := authhttp.NewService(userRepo, tokens)
 
 		llm := newLLM()
 		runner := agent.New(
@@ -100,7 +116,11 @@ func Init() {
 			Worker: worker,
 			Queue:  q,
 			Broker: eventBroker,
+			Auth:   authSvc,
 		}
+
+		// Idempotent admin bootstrap from ADMIN_EMAIL/ADMIN_PASSWORD (if both set).
+		bootstrapAdmin(context.Background(), userRepo)
 	})
 }
 
@@ -170,6 +190,34 @@ func newLLM() ports.LLM {
 	default:
 		return geminillm.New()
 	}
+}
+
+// bootstrapAdmin creates (or updates) an admin user from ADMIN_EMAIL and
+// ADMIN_PASSWORD when both are set. It is idempotent (UpsertByEmail) so repeated
+// startups never duplicate the row. Secrets are never logged — only the fact that
+// bootstrap ran and the (non-secret) email.
+func bootstrapAdmin(ctx context.Context, users ports.UserRepo) {
+	email := strings.TrimSpace(os.Getenv("ADMIN_EMAIL"))
+	password := os.Getenv("ADMIN_PASSWORD")
+	if email == "" || password == "" {
+		return
+	}
+	hash, err := auth.HashPassword(password)
+	if err != nil {
+		log.Printf("bootstrap admin: hash password: %v", err)
+		return
+	}
+	admin := &domain.User{
+		Email:        email,
+		Name:         "Administrator",
+		Role:         domain.RoleAdmin,
+		PasswordHash: hash,
+	}
+	if err := users.UpsertByEmail(ctx, admin); err != nil {
+		log.Printf("bootstrap admin: upsert %s: %v", email, err)
+		return
+	}
+	log.Printf("bootstrap admin: ensured admin user %s", email)
 }
 
 func findEnvFile() string {

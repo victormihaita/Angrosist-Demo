@@ -2,6 +2,7 @@ package ports
 
 import (
 	"context"
+	"errors"
 
 	"github.com/angrosist/demo/internal/domain"
 )
@@ -57,3 +58,33 @@ type SourcingRepo interface {
 	Create(ctx context.Context, req *domain.SourcingRequest) error
 	UpdateByLeadID(ctx context.Context, req *domain.SourcingRequest) error
 }
+
+// UserRepo is the persistence port for dashboard operators (staff/admin). It is
+// consumed by the auth/RBAC layer; the only production adapter lives in
+// internal/persistence/postgres and a mock backs the unit tests. All lookups are
+// parameterized; no SQL is constructed from caller input.
+type UserRepo interface {
+	// GetByID returns the user with the given id, or ErrUserNotFound if no such
+	// row exists. The auth middleware uses it to resolve the JWT subject to the
+	// live user on every request (so role changes take effect immediately).
+	GetByID(ctx context.Context, id string) (*domain.User, error)
+	// GetByEmail returns the user with the given email, or ErrUserNotFound if no
+	// such row exists. The lookup is case-sensitive on the stored email.
+	GetByEmail(ctx context.Context, email string) (*domain.User, error)
+	// Create inserts a new user. The caller supplies Email, Name, Role and (for
+	// password login) PasswordHash; the database assigns ID/CreatedAt/UpdatedAt,
+	// which are written back onto the passed struct.
+	Create(ctx context.Context, user *domain.User) error
+	// List returns all users ordered by creation time (newest first). Intended for
+	// the admin user-management screen; callers project to domain.PublicUser.
+	List(ctx context.Context) ([]*domain.User, error)
+	// UpsertByEmail inserts the user or, when one already exists with the same
+	// email, updates its name, role and password hash. It backs idempotent admin
+	// bootstrap and never duplicates rows on repeated startups.
+	UpsertByEmail(ctx context.Context, user *domain.User) error
+}
+
+// ErrUserNotFound is returned by UserRepo.GetByEmail when no user matches. The
+// auth layer maps it to a generic 401 so callers cannot distinguish "unknown
+// email" from "wrong password".
+var ErrUserNotFound = errors.New("user not found")

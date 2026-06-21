@@ -17,9 +17,36 @@ func WriteJSON(w http.ResponseWriter, status int, v any) {
 	json.NewEncoder(w).Encode(v)
 }
 
-// WriteError writes a JSON error body with the given status.
+// WriteError writes a JSON error body with the given status using the legacy
+// demo shape {"error":"<string>"}. Prefer WriteErrorEnvelope for new endpoints
+// (API_CONTRACT §3).
 func WriteError(w http.ResponseWriter, status int, msg string) {
 	WriteJSON(w, status, map[string]string{"error": msg})
+}
+
+// ErrorDetail is one field-level validation issue in the structured envelope.
+type ErrorDetail struct {
+	Field string `json:"field"`
+	Issue string `json:"issue"`
+}
+
+// errorBody is the structured error envelope from API_CONTRACT §3:
+// {"error":{"code","message","details?"}}.
+type errorBody struct {
+	Error errorPayload `json:"error"`
+}
+
+type errorPayload struct {
+	Code    string        `json:"code"`
+	Message string        `json:"message"`
+	Details []ErrorDetail `json:"details,omitempty"`
+}
+
+// WriteErrorEnvelope writes the structured error envelope. code is a stable
+// SCREAMING_SNAKE_CASE machine-readable identifier; message is human-readable and
+// must contain no secrets or PII.
+func WriteErrorEnvelope(w http.ResponseWriter, status int, code, message string, details ...ErrorDetail) {
+	WriteJSON(w, status, errorBody{Error: errorPayload{Code: code, Message: message, Details: details}})
 }
 
 // ---- CORS (env-driven, origin-aware) --------------------------------------

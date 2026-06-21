@@ -11,6 +11,7 @@ import (
 	detailhandler "github.com/angrosist/demo/api/leads/detail"
 	streamhandler "github.com/angrosist/demo/api/stream"
 	"github.com/angrosist/demo/internal/app"
+	"github.com/angrosist/demo/internal/domain"
 )
 
 func main() {
@@ -22,6 +23,12 @@ func main() {
 	mux.HandleFunc("/api/leads", leadshandler.Handler)
 	// SSE stream for live agent replies (long-running server only — not Vercel).
 	mux.HandleFunc("/api/stream", streamhandler.Handler(app.GetContainer().Broker))
+
+	// Staff/admin auth + RBAC (M3 Epic 3.3): login is public; user management is
+	// admin-only behind bearer-token + role middleware.
+	authSvc := app.GetContainer().Auth
+	mux.HandleFunc("/api/auth/login", authSvc.Login)
+	mux.HandleFunc("/api/users", authSvc.Auth.RequireRole(domain.RoleAdmin, authSvc.ListUsers))
 
 	port := os.Getenv("PORT")
 	if port == "" {
