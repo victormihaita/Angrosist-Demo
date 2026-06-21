@@ -1,0 +1,15 @@
+# dev environment — EXAMPLE values. Copy to terraform.tfvars (gitignored) and
+# fill in. NEVER put real secret values here. db_password is supplied at apply
+# time from Secret Manager (see README), not stored in this file.
+
+project_id = "REPLACE_WITH_DEV_PROJECT_ID"
+region     = "europe-west1"
+
+# CI overrides image_tag with the commit SHA.
+image_tag = "latest"
+
+# Locked CORS allow-list (no "*"): dashboard + hosted chat + approved widget hosts.
+cors_allowed_origins = "https://dev-dashboard.example.com,https://dev-chat.example.com"
+
+# db_password: DO NOT set here. Pass at apply time from Secret Manager, e.g.
+#   -var "db_password=$(gcloud secrets versions access latest --secret=ei-dev-db-password)"

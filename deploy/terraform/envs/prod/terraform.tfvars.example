@@ -1,0 +1,13 @@
+# production environment — EXAMPLE values. Copy to terraform.tfvars (gitignored).
+# NEVER put real secret values here. db_password is supplied at apply time.
+
+project_id = "REPLACE_WITH_PROD_PROJECT_ID"
+region     = "europe-west1"
+
+image_tag = "latest"
+
+# prod CORS: explicit allow-list ONLY (no "*"), per SECURITY.md §9.4.
+cors_allowed_origins = "https://dashboard.example.com,https://chat.example.com"
+
+# db_password: pass at apply time from Secret Manager, e.g.
+#   -var "db_password=$(gcloud secrets versions access latest --secret=ei-prod-db-password)"

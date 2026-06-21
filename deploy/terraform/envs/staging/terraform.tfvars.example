@@ -1,0 +1,12 @@
+# staging environment — EXAMPLE values. Copy to terraform.tfvars (gitignored).
+# NEVER put real secret values here. db_password is supplied at apply time.
+
+project_id = "REPLACE_WITH_STAGING_PROJECT_ID"
+region     = "europe-west1"
+
+image_tag = "latest"
+
+cors_allowed_origins = "https://staging-dashboard.example.com,https://staging-chat.example.com"
+
+# db_password: pass at apply time from Secret Manager, e.g.
+#   -var "db_password=$(gcloud secrets versions access latest --secret=ei-staging-db-password)"

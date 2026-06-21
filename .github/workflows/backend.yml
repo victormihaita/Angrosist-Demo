@@ -1,0 +1,196 @@
+# Backend CI/CD (CLAUDE.md CI/CD expectations, SECURITY.md §10, BUILD_PLAN M1 1.3).
+#
+# Two phases:
+#   1. CI (always-on): go build/vet/test + gosec + govulncheck + gitleaks.
+#      Runs on push to develop and on PRs. Needs NO GCP credentials.
+#   2. DEPLOY (DORMANT by default): build image -> push to Artifact Registry ->
+#      deploy Cloud Run -> run DB migrations as a deploy step.
+#
+# DORMANT-BY-DEFAULT: the deploy job triggers on workflow_dispatch (manual) ONLY,
+# and additionally guards every step on the repo variable DEPLOY_ENABLED == 'true'.
+# Until GCP is provisioned and DEPLOY_ENABLED is set, deploy never runs and never
+# fails a push. See "ENABLE PUSH-TRIGGERED DEPLOYS LATER" below.
+#
+# Auth to GCP uses Workload Identity Federation / OIDC (no long-lived JSON keys,
+# SECURITY.md §10). Required GitHub config (set when provisioning, NEVER hardcoded):
+#   Variables : DEPLOY_ENABLED, GCP_PROJECT_ID, GCP_REGION, AR_REPOSITORY,
+#               RUN_API_SERVICE, RUN_WORKER_SERVICE, CLOUDSQL_CONNECTION
+#   Secrets   : GCP_WIF_PROVIDER (projects/N/locations/global/workloadIdentityPools/POOL/providers/PROVIDER)
+#               GCP_DEPLOYER_SA  (ei-<env>-deployer@<project>.iam.gserviceaccount.com)
+
+name: backend
+
+on:
+  push:
+    branches: [develop]
+    paths:
+      - "backend/**"
+      - ".github/workflows/backend.yml"
+  pull_request:
+    paths:
+      - "backend/**"
+      - ".github/workflows/backend.yml"
+  # Manual trigger for the (dormant) deploy job.
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: "Target environment to deploy"
+        type: choice
+        options: [staging, prod]
+        default: staging
+
+permissions:
+  contents: read
+
+defaults:
+  run:
+    working-directory: backend
+
+jobs:
+  # ---------------------------------------------------------------------------
+  # CI — always runs, no GCP needed.
+  # ---------------------------------------------------------------------------
+  ci:
+    name: lint / test / build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.25"
+          cache-dependency-path: backend/go.sum
+
+      - name: Download modules
+        run: go mod download
+
+      - name: go vet
+        run: go vet ./...
+
+      - name: Build (server + migrate)
+        run: |
+          go build ./cmd/server
+          go build ./cmd/migrate
+
+      - name: Test
+        run: go test ./...
+
+      - name: govulncheck (dependency scanning)
+        run: |
+          go install golang.org/x/vuln/cmd/govulncheck@latest
+          "$(go env GOPATH)/bin/govulncheck" ./...
+
+  gosec:
+    name: gosec (SAST)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Run gosec
+        uses: securego/gosec@master
+        with:
+          args: ./backend/...
+
+  secret-scan:
+    name: gitleaks (secret scanning)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Run gitleaks
+        uses: gitleaks/gitleaks-action@v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  # ---------------------------------------------------------------------------
+  # DEPLOY — DORMANT BY DEFAULT.
+  #   - Triggers on workflow_dispatch only (never on push).
+  #   - Every step also guarded by `if: vars.DEPLOY_ENABLED == 'true'` so even a
+  #     manual run is a no-op until GCP is provisioned and the var is set.
+  #
+  # ENABLE PUSH-TRIGGERED DEPLOYS LATER:
+  #   1. Provision GCP (deploy/terraform/README.md) and set up Workload Identity.
+  #   2. Set repo variable DEPLOY_ENABLED=true and the GCP_* vars/secrets above.
+  #   3. To auto-deploy staging on merge to develop, add `push` handling here:
+  #        if: github.event_name == 'push' || github.event_name == 'workflow_dispatch'
+  #      and resolve the environment from the branch. Keep the DEPLOY_ENABLED guard.
+  # ---------------------------------------------------------------------------
+  deploy:
+    name: build → push → deploy → migrate
+    needs: [ci, gosec, secret-scan]
+    if: github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    environment: ${{ github.event.inputs.environment }}
+    permissions:
+      contents: read
+      id-token: write # required for Workload Identity Federation (OIDC)
+    steps:
+      - name: Guard — deploy disabled until GCP is ready
+        if: vars.DEPLOY_ENABLED != 'true'
+        run: |
+          echo "DEPLOY_ENABLED is not 'true' — deploy is dormant. Nothing to do."
+          echo "Set the repo variable DEPLOY_ENABLED=true once GCP is provisioned."
+
+      - uses: actions/checkout@v4
+        if: vars.DEPLOY_ENABLED == 'true'
+
+      - name: Authenticate to GCP (Workload Identity, no JSON keys)
+        if: vars.DEPLOY_ENABLED == 'true'
+        uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: ${{ secrets.GCP_WIF_PROVIDER }}
+          service_account: ${{ secrets.GCP_DEPLOYER_SA }}
+
+      - name: Set up gcloud
+        if: vars.DEPLOY_ENABLED == 'true'
+        uses: google-github-actions/setup-gcloud@v2
+
+      - name: Configure Docker for Artifact Registry
+        if: vars.DEPLOY_ENABLED == 'true'
+        run: gcloud auth configure-docker ${{ vars.GCP_REGION }}-docker.pkg.dev --quiet
+
+      - name: Build and push image
+        if: vars.DEPLOY_ENABLED == 'true'
+        run: |
+          IMAGE="${{ vars.GCP_REGION }}-docker.pkg.dev/${{ vars.GCP_PROJECT_ID }}/${{ vars.AR_REPOSITORY }}/backend:${{ github.sha }}"
+          docker build -t "$IMAGE" -f backend/Dockerfile backend
+          docker push "$IMAGE"
+          echo "IMAGE=$IMAGE" >> "$GITHUB_ENV"
+        working-directory: ${{ github.workspace }}
+
+      # Migrations run as a DEPLOY STEP (CLAUDE.md), not manually. We run the
+      # migrate binary via a Cloud Run job execution against the same image.
+      - name: Run DB migrations (deploy step)
+        if: vars.DEPLOY_ENABLED == 'true'
+        env:
+          # Secret name follows the Terraform naming: ei-<env>-db-password.
+          DB_PASSWORD_SECRET: ei-${{ github.event.inputs.environment }}-db-password
+        run: |
+          gcloud run jobs deploy backend-migrate \
+            --image "$IMAGE" \
+            --command /app/migrate \
+            --region "${{ vars.GCP_REGION }}" \
+            --set-cloudsql-instances "${{ vars.CLOUDSQL_CONNECTION }}" \
+            --set-secrets "DB_PASSWORD=${DB_PASSWORD_SECRET}:latest" \
+            --quiet
+          gcloud run jobs execute backend-migrate \
+            --region "${{ vars.GCP_REGION }}" --wait
+
+      - name: Deploy api (Cloud Run)
+        if: vars.DEPLOY_ENABLED == 'true'
+        run: |
+          gcloud run deploy "${{ vars.RUN_API_SERVICE }}" \
+            --image "$IMAGE" \
+            --region "${{ vars.GCP_REGION }}" \
+            --command /app/server \
+            --quiet
+
+      - name: Deploy worker (Cloud Run)
+        if: vars.DEPLOY_ENABLED == 'true'
+        run: |
+          gcloud run deploy "${{ vars.RUN_WORKER_SERVICE }}" \
+            --image "$IMAGE" \
+            --region "${{ vars.GCP_REGION }}" \
+            --command /app/server \
+            --quiet
+          # M2: switch --command to /app/worker once the image builds it.
