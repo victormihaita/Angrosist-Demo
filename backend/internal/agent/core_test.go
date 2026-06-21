@@ -40,6 +40,13 @@ type mockConvRepo struct {
 func (m *mockConvRepo) Create(ctx context.Context, channel string) (*domain.Conversation, error) {
 	return m.conv, nil
 }
+func (m *mockConvRepo) CreateWith(ctx context.Context, channel, vertical, intent string) (*domain.Conversation, error) {
+	if m.conv != nil {
+		m.conv.Vertical = vertical
+		m.conv.Intent = intent
+	}
+	return m.conv, nil
+}
 func (m *mockConvRepo) GetByID(ctx context.Context, id string) (*domain.Conversation, error) {
 	return m.conv, nil
 }
@@ -236,8 +243,10 @@ func TestRunTurn_PlainText(t *testing.T) {
 	if len(llm.calls) != 1 {
 		t.Fatalf("expected 1 LLM call, got %d", len(llm.calls))
 	}
-	// System prompt + tools wired in.
-	if llm.calls[0].System != systemPrompt {
+	// System prompt + tools wired in. With no vertical/intent on the conversation,
+	// the flow engine falls back to the Angrosist buyer flow (default), so the RO
+	// Angrosist prompt and that flow's 3-tool set are passed unchanged.
+	if llm.calls[0].System != promptAngrosistBuyerRO {
 		t.Fatalf("system prompt not passed to LLM")
 	}
 	if len(llm.calls[0].Tools) != 3 {

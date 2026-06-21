@@ -30,25 +30,55 @@ var handoffReasons = map[string]bool{
 	"other":                      true,
 }
 
-// toolDefs returns the vendor-neutral tool declarations the agent exposes to the
-// LLM. Parameters are JSON Schema objects; the adapter translates them into the
-// SDK's tool/function-declaration format.
-func toolDefs() []ports.ToolDef {
-	return []ports.ToolDef{
-		{
-			Name:        toolVerifyCompany,
-			Description: "Verifică o companie românească prin CUI/CIF folosind baza de date ANAF. Apelează imediat ce ai CUI-ul de la utilizator.",
-			Parameters: json.RawMessage(`{
-				"type": "object",
-				"properties": {
-					"cui": {
-						"type": "string",
-						"description": "Codul unic de identificare fiscală (CUI sau CIF) al companiei, doar cifre"
-					}
+// verifyCompanyToolDef and handoffToolDef are shared across all flows (every RO
+// company has a CUI, and any flow can escalate). They are functions so each flow's
+// ToolDefs can compose them with its own save_lead schema.
+func verifyCompanyToolDef() ports.ToolDef {
+	return ports.ToolDef{
+		Name:        toolVerifyCompany,
+		Description: "Verifică o companie românească prin CUI/CIF folosind baza de date ANAF. Apelează imediat ce ai CUI-ul de la utilizator.",
+		Parameters: json.RawMessage(`{
+			"type": "object",
+			"properties": {
+				"cui": {
+					"type": "string",
+					"description": "Codul unic de identificare fiscală (CUI sau CIF) al companiei, doar cifre"
+				}
+			},
+			"required": ["cui"]
+		}`),
+	}
+}
+
+func handoffToolDef() ports.ToolDef {
+	return ports.ToolDef{
+		Name:        toolHandoff,
+		Description: "Escaladează conversația către un coleg uman. Folosește când utilizatorul cere un om, este confuz sau contradictoriu, cererea este în afara scopului, sau nu poți continua în siguranță.",
+		Parameters: json.RawMessage(`{
+			"type": "object",
+			"properties": {
+				"reason": {
+					"type": "string",
+					"enum": ["user_request", "confusion_or_contradiction", "out_of_scope", "verification_failed", "unclassifiable_need", "other"],
+					"description": "Motivul escaladării"
 				},
-				"required": ["cui"]
-			}`),
-		},
+				"summary": {
+					"type": "string",
+					"description": "Rezumat de un paragraf pentru coleg, în limba conversației"
+				}
+			},
+			"required": ["reason"]
+		}`),
+	}
+}
+
+// angrosistBuyerToolDefs is the EXACT tool set the prior single-vertical runner
+// exposed: verify_company, save_lead (Angrosist buyer schema), handoff_to_human,
+// in that order. Preserving the order keeps the existing flow's behavior and tests
+// identical.
+func angrosistBuyerToolDefs() []ports.ToolDef {
+	return []ports.ToolDef{
+		verifyCompanyToolDef(),
 		{
 			Name:        toolSaveLead,
 			Description: "Salvează lead-ul calificat după ce toate informațiile sunt colectate și compania verificată.",
@@ -91,37 +121,148 @@ func toolDefs() []ports.ToolDef {
 				"required": ["product_name", "quantity", "unit", "delivery_location", "cui", "company_name", "phone", "email"]
 			}`),
 		},
-		{
-			Name:        toolHandoff,
-			Description: "Escaladează conversația către un coleg uman. Folosește când utilizatorul cere un om, este confuz sau contradictoriu, cererea este în afara scopului, sau nu poți continua în siguranță.",
-			Parameters: json.RawMessage(`{
-				"type": "object",
-				"properties": {
-					"reason": {
-						"type": "string",
-						"enum": ["user_request", "confusion_or_contradiction", "out_of_scope", "verification_failed", "unclassifiable_need", "other"],
-						"description": "Motivul escaladării"
-					},
-					"summary": {
-						"type": "string",
-						"description": "Rezumat de un paragraf pentru coleg, în limba conversației"
-					}
-				},
-				"required": ["reason"]
-			}`),
-		},
+		handoffToolDef(),
 	}
 }
 
-// executeTool dispatches a tool call to its handler. Behavior is identical to the
-// prior Gemini runner: handlers return a result map fed back to the LLM, and an
-// error is surfaced to the caller as an {"error": ...} result.
-func (c *Core) executeTool(ctx context.Context, conv *domain.Conversation, call ports.ToolCall) (map[string]any, error) {
+// pcBuyerToolDefs is the PalletClearance buyer tool set: verify_company (CUI
+// opportunistic), save_lead (buyer-feed schema), handoff_to_human.
+func pcBuyerToolDefs() []ports.ToolDef {
+	return []ports.ToolDef{
+		verifyCompanyToolDef(),
+		{
+			Name:        toolSaveLead,
+			Description: "Salvează profilul de cumpărător PalletClearance după ce ai colectat preferințele și datele de contact.",
+			Parameters: json.RawMessage(`{
+				"type": "object",
+				"properties": {
+					"categories": {
+						"type": "array",
+						"items": {"type": "string"},
+						"description": "Categoriile de produse care îl interesează"
+					},
+					"volume": {
+						"type": "string",
+						"description": "Capacitatea de volum/manipulare (ex. 2 camioane/lună)"
+					},
+					"countries": {
+						"type": "array",
+						"items": {"type": "string"},
+						"description": "Țările sursă din care ar cumpăra (coduri ISO sau nume)"
+					},
+					"near_expiry_ok": {
+						"type": "boolean",
+						"description": "Acceptă stoc cu termen scurt / aproape de expirare"
+					},
+					"subscribe": {
+						"type": "boolean",
+						"description": "Vrea să fie abonat la feed-ul de loturi"
+					},
+					"cui": {
+						"type": "string",
+						"description": "CUI-ul companiei (opțional)"
+					},
+					"company_name": {
+						"type": "string",
+						"description": "Numele companiei (opțional)"
+					},
+					"phone": {
+						"type": "string",
+						"description": "Numărul de telefon de contact"
+					},
+					"email": {
+						"type": "string",
+						"description": "Adresa de email de contact"
+					}
+				},
+				"required": ["categories", "volume", "countries", "near_expiry_ok", "subscribe", "phone", "email"]
+			}`),
+		},
+		handoffToolDef(),
+	}
+}
+
+// pcSellerToolDefs is the PalletClearance seller tool set: verify_company,
+// save_lead (lot schema), handoff_to_human. (The blocking photo gate / upload_media
+// land in part A2; save_lead is a normal submit here.)
+func pcSellerToolDefs() []ports.ToolDef {
+	return []ports.ToolDef{
+		verifyCompanyToolDef(),
+		{
+			Name:        toolSaveLead,
+			Description: "Salvează listarea lotului PalletClearance după ce ai colectat detaliile lotului, compania și datele de contact.",
+			Parameters: json.RawMessage(`{
+				"type": "object",
+				"properties": {
+					"stock_type": {
+						"type": "string",
+						"description": "Tipul de stoc (overstock / lichidare / retururi / termen scurt)"
+					},
+					"category": {
+						"type": "string",
+						"description": "Categoria de produse a lotului"
+					},
+					"quantity": {
+						"type": "number",
+						"description": "Cantitatea"
+					},
+					"unit": {
+						"type": "string",
+						"description": "Unitatea de măsură (paleți / cutii / tone)"
+					},
+					"location": {
+						"type": "string",
+						"description": "Unde se află stocul"
+					},
+					"country": {
+						"type": "string",
+						"description": "Țara unde se află stocul (cod ISO sau nume)"
+					},
+					"expiry": {
+						"type": "string",
+						"description": "Data de expirare / termenul (format ISO YYYY-MM-DD dacă e posibil)"
+					},
+					"target_price": {
+						"type": "number",
+						"description": "Prețul cerut (opțional)"
+					},
+					"confidential": {
+						"type": "boolean",
+						"description": "Listarea este confidențială (ascunde identitatea vânzătorului)"
+					},
+					"cui": {
+						"type": "string",
+						"description": "CUI-ul companiei vânzătoare"
+					},
+					"company_name": {
+						"type": "string",
+						"description": "Numele companiei confirmat de ANAF (sau introdus de utilizator dacă ANAF indisponibil)"
+					},
+					"phone": {
+						"type": "string",
+						"description": "Numărul de telefon de contact"
+					},
+					"email": {
+						"type": "string",
+						"description": "Adresa de email de contact"
+					}
+				},
+				"required": ["stock_type", "category", "quantity", "location", "expiry", "confidential", "cui", "company_name", "phone", "email"]
+			}`),
+		},
+		handoffToolDef(),
+	}
+}
+
+// executeTool dispatches a tool call to its handler. verify_company and
+// handoff_to_human are flow-agnostic; save_lead routes to the active flow's
+// typed-request writer (sourcing_request | listing | buyer_profile).
+func (c *Core) executeTool(ctx context.Context, conv *domain.Conversation, flow *Flow, call ports.ToolCall) (map[string]any, error) {
 	switch call.Name {
 	case toolVerifyCompany:
 		return c.toolVerifyCompany(ctx, conv, call.Args)
 	case toolSaveLead:
-		return c.toolSaveLead(ctx, conv, call.Args)
+		return flow.Submit(ctx, c, conv, call.Args)
 	case toolHandoff:
 		return c.toolHandoff(ctx, conv, call.Args)
 	default:
@@ -176,111 +317,52 @@ func (c *Core) toolVerifyCompany(ctx context.Context, conv *domain.Conversation,
 	}, nil
 }
 
-func (c *Core) toolSaveLead(ctx context.Context, conv *domain.Conversation, args map[string]any) (map[string]any, error) {
-	cui, _ := args["cui"].(string)
-	phone := strArg(args["phone"])
-	email := strArg(args["email"])
-	qty := extractFloat(args["quantity"])
-
-	company, err := c.companyRepo.GetByCUI(ctx, cui)
-	if err != nil {
-		// ANAF was unavailable — upsert a minimal record from agent-collected args.
-		company = &domain.Company{
-			CUI:      cui,
-			Country:  "RO",
-			RegNo:    cui,
-			Name:     strArg(args["company_name"]),
-			IsActive: true,
-		}
-		if upsertErr := c.companyRepo.Upsert(ctx, company); upsertErr != nil {
-			return nil, fmt.Errorf("upsert company: %w", upsertErr)
-		}
-		company, err = c.companyRepo.GetByCUI(ctx, cui)
-		if err != nil {
-			return nil, fmt.Errorf("company not found after upsert: %w", err)
-		}
-	}
-
-	req := &domain.SourcingRequest{
-		ProductName:      strArg(args["product_name"]),
-		Quantity:         qty,
-		Unit:             strArg(args["unit"]),
-		DeliveryLocation: strArg(args["delivery_location"]),
-	}
-
-	// If a lead already exists for this conversation, update it in place.
-	existingLead, err := c.leadRepo.GetByConversationID(ctx, conv.ID)
-	if err == nil {
-		contact := &domain.Contact{
-			ID:        existingLead.ContactID,
-			CompanyID: company.ID,
-			Phone:     phone,
-			Email:     email,
-		}
-		if err := c.contactRepo.Update(ctx, contact); err != nil {
-			return nil, fmt.Errorf("update contact: %w", err)
-		}
-		if err := c.leadRepo.UpdateCompanyContact(ctx, existingLead.ID, company.ID, contact.ID); err != nil {
-			return nil, fmt.Errorf("update lead: %w", err)
-		}
-		req.LeadID = existingLead.ID
-		if err := c.sourcingRepo.UpdateByLeadID(ctx, req); err != nil {
-			return nil, fmt.Errorf("update sourcing request: %w", err)
-		}
-		c.updateExtracted(ctx, conv, req, phone, email, args)
-		c.notifyLeadSubmitted(ctx, conv, existingLead.ID, company, req, phone, email)
-		return map[string]any{"saved": true, "lead_id": existingLead.ID, "updated": true}, nil
-	}
-
-	// No existing lead — create everything fresh.
-	contact := &domain.Contact{
-		CompanyID: company.ID,
-		Phone:     phone,
-		Email:     email,
-	}
-	if err := c.contactRepo.Create(ctx, contact); err != nil {
-		return nil, fmt.Errorf("create contact: %w", err)
-	}
-
-	lead := &domain.Lead{
-		ConversationID: conv.ID,
-		CompanyID:      company.ID,
-		ContactID:      contact.ID,
-		Status:         "new",
-	}
-	if err := c.leadRepo.Create(ctx, lead); err != nil {
-		return nil, fmt.Errorf("create lead: %w", err)
-	}
-
-	req.LeadID = lead.ID
-	if err := c.sourcingRepo.Create(ctx, req); err != nil {
-		return nil, fmt.Errorf("create sourcing request: %w", err)
-	}
-
-	c.updateExtracted(ctx, conv, req, phone, email, args)
-	c.notifyLeadSubmitted(ctx, conv, lead.ID, company, req, phone, email)
-	return map[string]any{"saved": true, "lead_id": lead.ID}, nil
-}
-
-func (c *Core) updateExtracted(ctx context.Context, conv *domain.Conversation, req *domain.SourcingRequest, phone, email string, args map[string]any) {
-	extracted := conv.Extracted
-	if extracted == nil {
-		extracted = make(map[string]any)
-	}
-	extracted["product_name"] = req.ProductName
-	extracted["quantity"] = args["quantity"]
-	extracted["unit"] = req.Unit
-	extracted["delivery_location"] = req.DeliveryLocation
-	extracted["phone"] = phone
-	extracted["email"] = email
-	_ = c.convRepo.UpdateExtracted(ctx, conv.ID, extracted)
-	_ = c.convRepo.UpdateState(ctx, conv.ID, domain.StateConfirmed)
-	conv.Extracted = extracted
-}
-
 func strArg(v any) string {
 	s, _ := v.(string)
 	return s
+}
+
+func boolArg(v any) bool {
+	switch b := v.(type) {
+	case bool:
+		return b
+	case string:
+		s := strings.ToLower(strings.TrimSpace(b))
+		return s == "true" || s == "yes" || s == "da" || s == "1"
+	}
+	return false
+}
+
+// strSliceArg coerces a tool arg into a []string. The LLM may send a JSON array
+// (decoded to []any of strings) or a single comma-separated string; both are
+// normalized so the flow gets a clean slice.
+func strSliceArg(v any) []string {
+	switch t := v.(type) {
+	case []any:
+		out := make([]string, 0, len(t))
+		for _, e := range t {
+			if s, ok := e.(string); ok {
+				s = strings.TrimSpace(s)
+				if s != "" {
+					out = append(out, s)
+				}
+			}
+		}
+		return out
+	case []string:
+		return t
+	case string:
+		parts := strings.Split(t, ",")
+		out := make([]string, 0, len(parts))
+		for _, p := range parts {
+			p = strings.TrimSpace(p)
+			if p != "" {
+				out = append(out, p)
+			}
+		}
+		return out
+	}
+	return nil
 }
 
 func extractFloat(v any) *float64 {

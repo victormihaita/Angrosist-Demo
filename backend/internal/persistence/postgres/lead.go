@@ -18,11 +18,19 @@ type LeadRepo struct{}
 func NewLeadRepo() *LeadRepo { return &LeadRepo{} }
 
 func (r *LeadRepo) Create(ctx context.Context, lead *domain.Lead) error {
+	vertical := lead.Vertical
+	if vertical == "" {
+		vertical = domain.DefaultVertical
+	}
+	intent := lead.Intent
+	if intent == "" {
+		intent = domain.DefaultIntent
+	}
 	row := GetPool().QueryRow(ctx, `
-		INSERT INTO leads (conversation_id, company_id, contact_id, status)
-		VALUES ($1, $2, $3, $4)
+		INSERT INTO leads (conversation_id, company_id, contact_id, status, vertical, intent)
+		VALUES ($1, $2, $3, $4, $5, $6)
 		RETURNING id, created_at
-	`, lead.ConversationID, nullStr(lead.CompanyID), nullStr(lead.ContactID), lead.Status)
+	`, lead.ConversationID, nullStr(lead.CompanyID), nullStr(lead.ContactID), lead.Status, vertical, intent)
 	return row.Scan(&lead.ID, &lead.CreatedAt)
 }
 

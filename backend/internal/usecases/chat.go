@@ -2,13 +2,66 @@ package usecases
 
 import (
 	"context"
+	"fmt"
 
+	"github.com/angrosist/demo/internal/domain"
 	"github.com/angrosist/demo/internal/ports"
 )
 
+// ChatRequest is the inbound chat-turn payload. Vertical and Intent are optional:
+// when omitted (the legacy widget sends neither) they default to the Angrosist
+// buyer flow so existing behavior is preserved. When present they are validated
+// against the supported lookup sets before a new conversation is created.
 type ChatRequest struct {
 	ConversationID string `json:"conversation_id"`
 	Message        string `json:"message"`
+	// Vertical selects the qualification path: "angrosist" | "palletclearance".
+	// Empty defaults to angrosist. Only used when creating a new conversation.
+	Vertical string `json:"vertical,omitempty"`
+	// Intent selects buy vs sell within the vertical: "buy" | "sell". Empty
+	// defaults to buy. Only used when creating a new conversation.
+	Intent string `json:"intent,omitempty"`
+}
+
+// supportedVerticals / supportedIntents are the values the chat entrypoint accepts
+// for a NEW conversation (Phase-1 PalletClearance + Angrosist; skalyou is P2 and
+// not creatable from the widget yet). They mirror the verticals/intents lookups
+// (migration 010) but bound what the public entrypoint will start.
+var supportedVerticals = map[string]bool{
+	domain.VerticalAngrosist:       true,
+	domain.VerticalPalletClearance: true,
+}
+
+var supportedIntents = map[string]bool{
+	domain.IntentBuy:  true,
+	domain.IntentSell: true,
+}
+
+// ValidateVerticalIntent normalizes and validates an optional (vertical, intent)
+// pair for a NEW conversation, returning the resolved values or an error when the
+// pair is unsupported. The HTTP entrypoint calls it to reject bad input with a 400
+// before invoking RunTurn (which would otherwise surface the same error as a 500).
+func ValidateVerticalIntent(vertical, intent string) (string, string, error) {
+	return validateVerticalIntent(vertical, intent)
+}
+
+// validateVerticalIntent normalizes and validates the optional vertical/intent.
+// Empty values resolve to the defaults; a non-empty value not in the supported set
+// is rejected so an attacker/bad client cannot create an unsupported flow.
+func validateVerticalIntent(vertical, intent string) (string, string, error) {
+	if vertical == "" {
+		vertical = domain.DefaultVertical
+	}
+	if intent == "" {
+		intent = domain.DefaultIntent
+	}
+	if !supportedVerticals[vertical] {
+		return "", "", fmt.Errorf("unsupported vertical: %q", vertical)
+	}
+	if !supportedIntents[intent] {
+		return "", "", fmt.Errorf("unsupported intent: %q", intent)
+	}
+	return vertical, intent, nil
 }
 
 type ChatResponse struct {
@@ -48,7 +101,11 @@ func (uc *ChatUseCase) publish(convID string, ev ports.Event) {
 func (uc *ChatUseCase) RunTurn(ctx context.Context, req ChatRequest) (*ChatResponse, error) {
 	convID := req.ConversationID
 	if convID == "" {
-		conv, err := uc.convRepo.Create(ctx, "web")
+		vertical, intent, err := validateVerticalIntent(req.Vertical, req.Intent)
+		if err != nil {
+			return nil, err
+		}
+		conv, err := uc.convRepo.CreateWith(ctx, "web", vertical, intent)
 		if err != nil {
 			return nil, err
 		}

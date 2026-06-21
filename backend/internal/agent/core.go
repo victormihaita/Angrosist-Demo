@@ -22,14 +22,21 @@ const maxToolRounds = 8
 // model requests against the repository and verification ports. It implements
 // ports.AgentRunner.
 type Core struct {
-	llm          ports.LLM
-	convRepo     ports.ConversationRepo
-	msgRepo      ports.MessageRepo
-	companyRepo  ports.CompanyRepo
-	contactRepo  ports.ContactRepo
-	leadRepo     ports.LeadRepo
-	sourcingRepo ports.SourcingRepo
-	verifier     ports.CompanyDataProvider
+	llm              ports.LLM
+	convRepo         ports.ConversationRepo
+	msgRepo          ports.MessageRepo
+	companyRepo      ports.CompanyRepo
+	contactRepo      ports.ContactRepo
+	leadRepo         ports.LeadRepo
+	sourcingRepo     ports.SourcingRepo
+	listingRepo      ports.ListingRepo
+	buyerProfileRepo ports.BuyerProfileRepo
+	verifier         ports.CompanyDataProvider
+
+	// flows resolves the active Flow per conversation (vertical, intent). When nil
+	// (legacy/test wirings that pass only the positional repos), the core falls
+	// back to the Angrosist buyer flow so behavior is preserved.
+	flows *FlowRegistry
 
 	// mailer sends best-effort transactional email (lead confirmation, staff
 	// notification, handoff notification). May be nil — email is then skipped.
@@ -53,6 +60,15 @@ type Notifications struct {
 	DefaultLang string
 }
 
+// Repos bundles the per-vertical typed-request writers used by the flow Submit
+// functions. They are optional in legacy wirings: a flow whose Submit needs a nil
+// repo returns a structured error rather than panicking. The Angrosist buyer flow
+// uses only the long-standing sourcing repo, so the demo path needs none of these.
+type Repos struct {
+	Listing      ports.ListingRepo
+	BuyerProfile ports.BuyerProfileRepo
+}
+
 // New constructs the agent core with the LLM port and the repository/service
 // ports it needs to execute tools and persist conversation state. Email/handoff
 // notification side effects are disabled (nil mailer); use NewWithNotifications
@@ -72,7 +88,9 @@ func New(
 }
 
 // NewWithNotifications is New plus the transactional-email/handoff side effects.
-// The defaultLang falls back to RO when empty.
+// The defaultLang falls back to RO when empty. It builds a default FlowRegistry
+// and no extra typed-request repos (Angrosist buyer only); use NewWithFlows to
+// enable the PalletClearance flows.
 func NewWithNotifications(
 	llm ports.LLM,
 	convRepo ports.ConversationRepo,
@@ -84,23 +102,51 @@ func NewWithNotifications(
 	verifier ports.CompanyDataProvider,
 	n Notifications,
 ) *Core {
+	return NewWithFlows(llm, convRepo, msgRepo, companyRepo, contactRepo, leadRepo,
+		sourcingRepo, verifier, NewFlowRegistry(), Repos{}, n)
+}
+
+// NewWithFlows is the full constructor: it wires the vertical-aware FlowRegistry
+// and the per-vertical typed-request repos (listing, buyer_profile) alongside the
+// long-standing repos and notification side effects. This is the production
+// wiring; the older constructors delegate to it with a default registry and empty
+// extra repos so existing call sites and tests keep compiling and behaving.
+func NewWithFlows(
+	llm ports.LLM,
+	convRepo ports.ConversationRepo,
+	msgRepo ports.MessageRepo,
+	companyRepo ports.CompanyRepo,
+	contactRepo ports.ContactRepo,
+	leadRepo ports.LeadRepo,
+	sourcingRepo ports.SourcingRepo,
+	verifier ports.CompanyDataProvider,
+	flows *FlowRegistry,
+	repos Repos,
+	n Notifications,
+) *Core {
 	lang := n.DefaultLang
 	if lang == "" {
 		lang = domain.LocaleRO
 	}
+	if flows == nil {
+		flows = NewFlowRegistry()
+	}
 	return &Core{
-		llm:          llm,
-		convRepo:     convRepo,
-		msgRepo:      msgRepo,
-		companyRepo:  companyRepo,
-		contactRepo:  contactRepo,
-		leadRepo:     leadRepo,
-		sourcingRepo: sourcingRepo,
-		verifier:     verifier,
-		mailer:       n.Mailer,
-		activityLog:  n.ActivityLog,
-		staffNotify:  n.StaffNotify,
-		defaultLang:  lang,
+		llm:              llm,
+		convRepo:         convRepo,
+		msgRepo:          msgRepo,
+		companyRepo:      companyRepo,
+		contactRepo:      contactRepo,
+		leadRepo:         leadRepo,
+		sourcingRepo:     sourcingRepo,
+		listingRepo:      repos.Listing,
+		buyerProfileRepo: repos.BuyerProfile,
+		verifier:         verifier,
+		flows:            flows,
+		mailer:           n.Mailer,
+		activityLog:      n.ActivityLog,
+		staffNotify:      n.StaffNotify,
+		defaultLang:      lang,
 	}
 }
 
@@ -158,6 +204,12 @@ func (c *Core) runTurn(ctx context.Context, conversationID string, userMessage s
 		}
 	}
 
+	// Select the flow for this conversation's (vertical, intent). The flow supplies
+	// the system prompt, the offered tool set, and the typed-request persistence.
+	flow := ensureFlow(c.flowFor(conv))
+	systemPrompt := flow.Prompt(c.localeFor(conv))
+	tools := flow.ToolDefs()
+
 	// Advance state on first user message.
 	if conv.State == domain.StateGreeting {
 		_ = c.convRepo.UpdateState(ctx, conversationID, domain.StateQualifying)
@@ -175,7 +227,7 @@ func (c *Core) runTurn(ctx context.Context, conversationID string, userMessage s
 		resp, err := c.llm.Complete(ctx, ports.LLMRequest{
 			System:   systemPrompt,
 			Messages: messages,
-			Tools:    toolDefs(),
+			Tools:    tools,
 		})
 		if err != nil {
 			return "", fmt.Errorf("llm complete: %w", err)
@@ -198,7 +250,7 @@ func (c *Core) runTurn(ctx context.Context, conversationID string, userMessage s
 		// Execute each requested tool and feed the results back to the model.
 		results := make([]ports.ToolResult, 0, len(resp.ToolCalls))
 		for _, call := range resp.ToolCalls {
-			result, execErr := c.executeTool(ctx, conv, call)
+			result, execErr := c.executeTool(ctx, conv, flow, call)
 			if execErr != nil {
 				result = map[string]any{"error": execErr.Error()}
 			}

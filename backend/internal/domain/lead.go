@@ -11,7 +11,12 @@ type Lead struct {
 	CompanyID      string
 	ContactID      string
 	Status         string
-	CreatedAt      time.Time
+	// Vertical and Intent tag the thin lead with its flow (migration 016, FK to the
+	// verticals/intents lookups). Empty values resolve to domain.DefaultVertical/
+	// DefaultIntent in the adapter, preserving the demo's angrosist/buy default.
+	Vertical  string
+	Intent    string
+	CreatedAt time.Time
 }
 
 type Contact struct {

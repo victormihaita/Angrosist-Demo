@@ -9,6 +9,11 @@ import (
 
 type ConversationRepo interface {
 	Create(ctx context.Context, channel string) (*domain.Conversation, error)
+	// CreateWith creates a conversation tagged with a vertical and intent (from the
+	// verticals/intents lookups, migration 010), selecting the active flow. Empty
+	// vertical/intent resolve to domain.DefaultVertical/DefaultIntent in the adapter
+	// so the legacy Angrosist-buyer behavior is preserved.
+	CreateWith(ctx context.Context, channel, vertical, intent string) (*domain.Conversation, error)
 	GetByID(ctx context.Context, id string) (*domain.Conversation, error)
 	UpdateState(ctx context.Context, id string, state domain.ConversationState) error
 	UpdateExtracted(ctx context.Context, id string, extracted map[string]any) error
@@ -119,6 +124,29 @@ type ContactRepo interface {
 type SourcingRepo interface {
 	Create(ctx context.Context, req *domain.SourcingRequest) error
 	UpdateByLeadID(ctx context.Context, req *domain.SourcingRequest) error
+}
+
+// ListingRepo persists the PalletClearance SELLER typed request (migration 019).
+// A listing is a sibling of the thin lead (invariant #5): one per lead. All SQL
+// is parameterized. The seller-photo hard gate is enforced by the flow engine,
+// not this repo.
+type ListingRepo interface {
+	// Create inserts one listing row, writing back the assigned ID/CreatedAt.
+	Create(ctx context.Context, l *domain.Listing) error
+	// UpsertByLead inserts the listing or, when one already exists for the lead
+	// (UNIQUE lead_id), updates it in place. It backs the idempotent submit path
+	// (a redelivered turn must not duplicate the listing).
+	UpsertByLead(ctx context.Context, l *domain.Listing) error
+}
+
+// BuyerProfileRepo persists the PalletClearance BUYER standing-demand profile
+// (migration 020). It is a sibling typed request of the thin lead (invariant
+// #5) keyed by (company_id, vertical). All SQL is parameterized.
+type BuyerProfileRepo interface {
+	// Upsert inserts the buyer profile or updates the existing one for the same
+	// (company_id, vertical), writing back the assigned ID/CreatedAt. It backs the
+	// idempotent submit path.
+	Upsert(ctx context.Context, p *domain.BuyerProfile) error
 }
 
 // UserRepo is the persistence port for dashboard operators (staff/admin). It is

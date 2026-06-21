@@ -98,6 +98,8 @@ func Init() {
 		contactRepo := pgadapter.NewContactRepo()
 		leadRepo := pgadapter.NewLeadRepo()
 		sourcingRepo := pgadapter.NewSourcingRepo()
+		listingRepo := pgadapter.NewListingRepo()
+		buyerProfileRepo := pgadapter.NewBuyerProfileRepo()
 		userRepo := pgadapter.NewUserRepo()
 		activityRepo := pgadapter.NewActivityLogRepo()
 		verifier := newVerifier()
@@ -111,10 +113,17 @@ func Init() {
 
 		llm := newLLM()
 		mailer := newMailer()
-		runner := agent.NewWithNotifications(
+		// Vertical-aware agent: the FlowRegistry selects the per-(vertical,intent)
+		// flow, and the per-vertical typed-request repos back the flows' submit paths.
+		runner := agent.NewWithFlows(
 			llm,
 			convRepo, msgRepo, companyRepo, contactRepo,
 			leadRepo, sourcingRepo, verifier,
+			agent.NewFlowRegistry(),
+			agent.Repos{
+				Listing:      listingRepo,
+				BuyerProfile: buyerProfileRepo,
+			},
 			agent.Notifications{
 				Mailer:      mailer,
 				ActivityLog: activityRepo,

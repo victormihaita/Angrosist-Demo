@@ -49,6 +49,15 @@ func Handler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// When starting a new conversation, validate the optional vertical/intent up
+	// front so an unsupported flow is a 400, not a 500. (Omitted => angrosist/buy.)
+	if req.ConversationID == "" {
+		if _, _, err := usecases.ValidateVerticalIntent(req.Vertical, req.Intent); err != nil {
+			httputil.WriteError(w, http.StatusBadRequest, "invalid vertical or intent")
+			return
+		}
+	}
+
 	resp, err := app.GetContainer().Chat.RunTurn(r.Context(), req)
 	if err != nil {
 		httputil.WriteError(w, http.StatusInternalServerError, "agent error: "+err.Error())
