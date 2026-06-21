@@ -6,7 +6,7 @@
 **Current milestone:** M1 — Foundation (in progress)
 **Done this run:** repo refactored to /cmd + /internal; full local Docker stack added.
 **Next task:** M1 schema migrations + repoint ANAF adapter to DemoANAF; then Terraform + CI/CD as code (provisioning deferred).
-**Branch:** `main` · push auth fixed (gh active account → `victormihaita`). _Owner pushes; Claude commits locally and flags when ready._
+**Branches:** `main` = the **Vercel demo** (frozen at pre-today `b5d1b3d`, do not push WIP here). `develop` = **active build** (all today's work; this is where we work). Push auth fixed (gh active account → `victormihaita`).
 
 ---
 
@@ -54,6 +54,7 @@ Legend: ✅ done · ⏳ in progress · ⬜ not started
 
 ## Changelog (newest first)
 
+- **2026-06-21** — **Branch split.** `main` reverted to `b5d1b3d` (pre-today) so Vercel keeps serving the stable demo; all today's work moved to the new `develop` branch, which is now the active build line. `origin` updated to match.
 - **2026-06-21** — **Local Docker stack** added: `docker compose up --build` runs Postgres + migrations + backend + frontend (no GCP needed). Backend/frontend Dockerfiles, nginx SPA config, compose with healthcheck + migrate-before-backend ordering, root `.env.example`. Compose config validated (daemon was down, so no build run here — run locally).
 - **2026-06-21** — **Backend refactored** to the target `/cmd` + `/internal` layout (M1 Epic 1.1): pkg→internal moves via git mv, `CompanyVerifier`→`CompanyDataProvider`, `cmd/worker` skeleton. Gemini kept whole (LLM-port split is M2). Build/vet/test green.
 - **2026-06-21** — Fixed git push (gh had two accounts; switched active to `victormihaita`).
