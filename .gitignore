@@ -2,6 +2,10 @@
 backend/.env
 frontend/.env
 
+# Claude Code local settings (holds local secrets like CONTEXT7_API_KEY)
+.claude/settings.local.json
+.claude/hooks/__pycache__/
+
 # Go
 backend/vendor/
 
