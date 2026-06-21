@@ -3,7 +3,7 @@ package usecases
 import (
 	"context"
 
-	"github.com/angrosist/demo/pkg/ports"
+	"github.com/angrosist/demo/internal/ports"
 )
 
 type ChatRequest struct {

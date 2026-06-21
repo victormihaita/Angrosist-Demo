@@ -9,8 +9,8 @@ import (
 
 	"github.com/google/generative-ai-go/genai"
 
-	"github.com/angrosist/demo/pkg/domain"
-	"github.com/angrosist/demo/pkg/ports"
+	"github.com/angrosist/demo/internal/domain"
+	"github.com/angrosist/demo/internal/ports"
 )
 
 type Runner struct {
@@ -20,7 +20,7 @@ type Runner struct {
 	contactRepo  ports.ContactRepo
 	leadRepo     ports.LeadRepo
 	sourcingRepo ports.SourcingRepo
-	verifier     ports.CompanyVerifier
+	verifier     ports.CompanyDataProvider
 }
 
 func NewRunner(
@@ -30,7 +30,7 @@ func NewRunner(
 	contactRepo ports.ContactRepo,
 	leadRepo ports.LeadRepo,
 	sourcingRepo ports.SourcingRepo,
-	verifier ports.CompanyVerifier,
+	verifier ports.CompanyDataProvider,
 ) *Runner {
 	return &Runner{
 		convRepo:     convRepo,

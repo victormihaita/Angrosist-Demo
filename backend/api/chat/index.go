@@ -5,9 +5,9 @@ import (
 	"net/http"
 	"strings"
 
-	httputil "github.com/angrosist/demo/pkg/adapters/http"
-	"github.com/angrosist/demo/pkg/app"
-	"github.com/angrosist/demo/pkg/usecases"
+	httputil "github.com/angrosist/demo/internal/api/httputil"
+	"github.com/angrosist/demo/internal/app"
+	"github.com/angrosist/demo/internal/usecases"
 )
 
 const (

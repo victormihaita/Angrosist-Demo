@@ -3,11 +3,11 @@ package ports
 import (
 	"context"
 
-	"github.com/angrosist/demo/pkg/domain"
+	"github.com/angrosist/demo/internal/domain"
 )
 
-// CompanyVerifier verifies a Romanian company by CUI via an external service.
-type CompanyVerifier interface {
+// CompanyDataProvider verifies a Romanian company by CUI via an external service.
+type CompanyDataProvider interface {
 	Verify(ctx context.Context, cui string) (*domain.Company, error)
 }
 

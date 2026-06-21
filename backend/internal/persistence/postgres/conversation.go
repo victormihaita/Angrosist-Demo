@@ -5,7 +5,7 @@ import (
 	"encoding/json"
 	"time"
 
-	"github.com/angrosist/demo/pkg/domain"
+	"github.com/angrosist/demo/internal/domain"
 )
 
 type ConversationRepo struct{}
