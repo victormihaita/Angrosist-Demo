@@ -1,4 +1,4 @@
-import { useState, useRef } from 'react'
+import { useState, useRef, useEffect } from 'react'
 import { sendMessage, type ExtractedFields } from '../src/lib/api'
 
 interface Message {
@@ -26,10 +26,12 @@ export function WidgetApp({ apiUrl, onClose }: Props) {
   const convIdRef = useRef<string | null>(sessionStorage.getItem(CONV_KEY))
   const bottomRef = useRef<HTMLDivElement>(null)
 
-  // Override API_URL if provided
-  if (apiUrl) {
-    ;(window as unknown as Record<string, unknown>).__ANGROSIST_API_URL__ = apiUrl
-  }
+  // Override API_URL if provided (side effect — keep out of render).
+  useEffect(() => {
+    if (apiUrl) {
+      ;(window as unknown as Record<string, unknown>).__ANGROSIST_API_URL__ = apiUrl
+    }
+  }, [apiUrl])
 
   async function handleSend() {
     const text = input.trim()
