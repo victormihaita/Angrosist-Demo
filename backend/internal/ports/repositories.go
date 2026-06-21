@@ -93,6 +93,20 @@ type ActivityLogRepo interface {
 	Append(ctx context.Context, entry domain.ActivityLog) error
 }
 
+// DocumentRepo persists the polymorphic document index (migration 021_documents).
+// It records where an uploaded blob lives (gcs_key) and what it belongs to
+// (owner_type, owner_id); the bytes themselves go through the FileStore port. The
+// (owner_type, owner_id) pair is a SOFT polymorphic reference — no DB foreign key
+// spans owner tables — so blob+row deletion is an explicit step on the GDPR
+// erasure path, not a cascade. All statements are parameterized.
+type DocumentRepo interface {
+	// Create inserts one document row. The database assigns ID and CreatedAt,
+	// which are written back onto the passed struct.
+	Create(ctx context.Context, d *domain.Document) error
+	// ListByOwner returns all documents for an owner, newest first.
+	ListByOwner(ctx context.Context, ownerType, ownerID string) ([]*domain.Document, error)
+}
+
 // ErrNotFound is returned by repository reads/mutations when the addressed row
 // does not exist. The dashboard handlers map it to a 404 envelope.
 var ErrNotFound = errors.New("not found")

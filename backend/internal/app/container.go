@@ -16,6 +16,7 @@ import (
 	geminillm "github.com/angrosist/demo/internal/agent/llm/gemini"
 	"github.com/angrosist/demo/internal/api/authhttp"
 	"github.com/angrosist/demo/internal/api/dashboardhttp"
+	"github.com/angrosist/demo/internal/api/uploadhttp"
 	"github.com/angrosist/demo/internal/auth"
 	"github.com/angrosist/demo/internal/broker"
 	"github.com/angrosist/demo/internal/domain"
@@ -23,6 +24,8 @@ import (
 	pgadapter "github.com/angrosist/demo/internal/persistence/postgres"
 	"github.com/angrosist/demo/internal/ports"
 	"github.com/angrosist/demo/internal/queue"
+	"github.com/angrosist/demo/internal/storage/gcs"
+	"github.com/angrosist/demo/internal/storage/localfs"
 	"github.com/angrosist/demo/internal/usecases"
 	"github.com/angrosist/demo/internal/verification/anaf"
 )
@@ -63,6 +66,19 @@ type Container struct {
 	// lead detail, offer tracking, assignment, B2B directory, handoff queue, KPIs).
 	// Its routes are mounted behind Auth.Auth.Require in cmd/server.
 	Dashboard *dashboardhttp.Service
+
+	// Upload is the validated multipart document-upload HTTP service (POST
+	// /api/upload). Mounted behind the staff auth middleware in cmd/server.
+	Upload *uploadhttp.Service
+
+	// FileStore is the binary object-storage seam (localfs in dev/docker, GCS at
+	// provisioning). Selected by FILESTORE_PROVIDER.
+	FileStore ports.FileStore
+
+	// LocalFS is the concrete local-filesystem store when FILESTORE_PROVIDER=local
+	// (nil otherwise). cmd/server reads it to register the GET /uploads/{key}
+	// file-serving route; prod serves objects via GCS signed URLs instead.
+	LocalFS *localfs.Store
 }
 
 var (
@@ -126,6 +142,12 @@ func Init() {
 		leadsUC := usecases.NewLeadUseCase(leadRepo, userRepo, activityRepo)
 		companiesUC := usecases.NewCompanyUseCase(companyRepo)
 
+		// Document storage: FileStore behind the port (localfs in dev/docker, GCS
+		// stub until provisioning) + the document index repo + the upload service.
+		fileStore, localStore := newFileStore()
+		docRepo := pgadapter.NewDocumentRepo()
+		uploadSvc := uploadhttp.NewService(fileStore, docRepo, maxUploadBytes())
+
 		container = &Container{
 			DB:        &dbPinger{pool: pool},
 			Chat:      usecases.NewChatUseCase(convRepo, runner, locker, eventBroker),
@@ -136,11 +158,48 @@ func Init() {
 			Broker:    eventBroker,
 			Auth:      authSvc,
 			Dashboard: dashboardhttp.NewService(leadsUC, companiesUC),
+			Upload:    uploadSvc,
+			FileStore: fileStore,
+			LocalFS:   localStore,
 		}
 
 		// Idempotent admin bootstrap from ADMIN_EMAIL/ADMIN_PASSWORD (if both set).
 		bootstrapAdmin(context.Background(), userRepo)
 	})
+}
+
+// newFileStore selects the FileStore adapter behind the ports.FileStore seam by
+// FILESTORE_PROVIDER:
+//
+//	local (default) — internal/storage/localfs; writes under FILESTORE_DIR and
+//	                  serves bytes via the GET /uploads/{key} route. Runs in docker
+//	                  compose / locally with no cloud credentials.
+//	gcs             — internal/storage/gcs; DEFERRED to provisioning. The stub
+//	                  fails loudly (ErrNotConfigured) rather than faking success;
+//	                  the real adapter (signed URLs, private bucket) lands then.
+//
+// It returns the port plus the concrete *localfs.Store (nil for gcs) so cmd/server
+// can register the dev file-serving route. Nothing is hardcoded — directory and
+// bucket come from env.
+func newFileStore() (ports.FileStore, *localfs.Store) {
+	switch os.Getenv("FILESTORE_PROVIDER") {
+	case "gcs":
+		return gcs.New(gcs.Config{Bucket: os.Getenv("GCS_BUCKET")}), nil
+	default:
+		store := localfs.New(os.Getenv("FILESTORE_DIR"))
+		return store, store
+	}
+}
+
+// maxUploadBytes reads MAX_UPLOAD_BYTES (optional); a non-positive/unset value
+// lets the upload service apply its default cap.
+func maxUploadBytes() int64 {
+	if v := os.Getenv("MAX_UPLOAD_BYTES"); v != "" {
+		if n, err := strconv.ParseInt(v, 10, 64); err == nil && n > 0 {
+			return n
+		}
+	}
+	return 0
 }
 
 // newQueue selects the Queue adapter from QUEUE_PROVIDER. "local" (default) runs

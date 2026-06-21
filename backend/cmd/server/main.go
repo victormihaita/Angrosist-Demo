@@ -8,6 +8,7 @@ import (
 	chathandler "github.com/angrosist/demo/api/chat"
 	healthhandler "github.com/angrosist/demo/api/health"
 	streamhandler "github.com/angrosist/demo/api/stream"
+	httputil "github.com/angrosist/demo/internal/api/httputil"
 	"github.com/angrosist/demo/internal/app"
 	"github.com/angrosist/demo/internal/domain"
 )
@@ -32,6 +33,22 @@ func main() {
 	// supersede the unauth demo /api/leads handlers (the Vercel api/ handlers
 	// remain for the demo deployment).
 	app.GetContainer().Dashboard.Register(mux, authSvc.Auth.Require)
+
+	// Document upload (M3 Epic 3.2): validated multipart upload behind the staff
+	// bearer-token middleware. Storage foundation for buyer product lists +
+	// (M4) seller photos.
+	mux.HandleFunc("POST /api/upload", authSvc.Auth.Require(app.GetContainer().Upload.Upload))
+	mux.HandleFunc("OPTIONS /api/upload", func(w http.ResponseWriter, r *http.Request) {
+		httputil.HandleOptions(w, r)
+	})
+
+	// Local file-serving route so FileStore.URL works in dev/docker. Only wired
+	// for the local-filesystem provider; prod serves private objects via GCS
+	// signed URLs, not this route. Public (no auth) like the served bytes would be
+	// behind a signed URL otherwise; path traversal is blocked in the handler.
+	if localStore := app.GetContainer().LocalFS; localStore != nil {
+		mux.HandleFunc("GET /uploads/{key...}", localStore.FileServer())
+	}
 
 	port := os.Getenv("PORT")
 	if port == "" {
