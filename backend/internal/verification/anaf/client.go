@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/angrosist/demo/internal/domain"
+	"github.com/angrosist/demo/internal/verification/caen"
 )
 
 // ErrNotFound is returned when the CUI does not exist in ANAF.
@@ -29,7 +30,9 @@ type Client struct {
 }
 
 func NewClient() *Client {
-	baseURL := os.Getenv("DEMOANAF_BASE_URL")
+	// The raw-ANAF fallback reads its own base URL so it stays correct after
+	// DEMOANAF_BASE_URL was repointed at the DemoANAF REST API.
+	baseURL := strings.TrimSpace(os.Getenv("ANAF_VAT_BASE_URL"))
 	if baseURL == "" {
 		baseURL = defaultBaseURL
 	}
@@ -59,13 +62,20 @@ func (c *Client) Verify(ctx context.Context, cui string) (*domain.Company, error
 // demoCompany returns a deterministic placeholder company for demo mode.
 func demoCompany(cui int) *domain.Company {
 	raw, _ := json.Marshal(map[string]any{"demo": true, "cui": cui})
+	cuiStr := fmt.Sprintf("%d", cui)
 	return &domain.Company{
-		CUI:      fmt.Sprintf("%d", cui),
-		Name:     "Demo Company SRL",
-		Address:  "Str. Exemplu, Nr. 1",
-		County:   "București",
-		IsActive: true,
-		RawData:  raw,
+		CUI:             cuiStr,
+		Country:         "RO",
+		RegNo:           cuiStr,
+		Name:            "Demo Company SRL",
+		Address:         "Str. Exemplu, Nr. 1",
+		County:          "București",
+		IsActive:        true,
+		VATStatus:       "active",
+		CAEN:            "4690",
+		Roles:           caen.RolesForCAEN("4690"),
+		RawData:         raw,
+		RawVerification: raw,
 	}
 }
 
@@ -140,13 +150,29 @@ func mapCompany(cui int, item anafFoundItem) *domain.Company {
 	addr := ParseAddress(dg.Adresa)
 
 	raw, _ := json.Marshal(item)
+	cuiStr := fmt.Sprintf("%d", cui)
+	caenCode := strings.TrimSpace(dg.CodCAEN)
+	vatStatus := "not_registered"
+	if item.ScpTva {
+		vatStatus = "active"
+	}
+	if item.StatusTvaInactivi {
+		vatStatus = "inactive"
+	}
 	return &domain.Company{
-		CUI:      fmt.Sprintf("%d", cui),
-		Name:     toTitle(strings.TrimSpace(dg.Denumire)),
-		Address:  strings.TrimSpace(addr.Street),
-		County:   strings.TrimSpace(addr.County),
-		IsActive: !item.StatusTvaInactivi,
-		RawData:  raw,
+		CUI:                cuiStr,
+		Country:            "RO",
+		RegNo:              cuiStr,
+		RegistrationNumber: strings.TrimSpace(dg.NrRegCom),
+		Name:               toTitle(strings.TrimSpace(dg.Denumire)),
+		Address:            strings.TrimSpace(addr.Street),
+		County:             strings.TrimSpace(addr.County),
+		IsActive:           !item.StatusTvaInactivi,
+		VATStatus:          vatStatus,
+		CAEN:               caenCode,
+		Roles:              caen.RolesForCAEN(caenCode),
+		RawData:            raw,
+		RawVerification:    raw,
 	}
 }
 

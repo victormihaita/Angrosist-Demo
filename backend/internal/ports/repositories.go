@@ -40,6 +40,11 @@ type LeadRepo interface {
 
 type CompanyRepo interface {
 	GetByCUI(ctx context.Context, cui string) (*domain.Company, error)
+	// GetByRegNo looks up a company by the canonical (country, reg_no) dedup key.
+	GetByRegNo(ctx context.Context, country, regNo string) (*domain.Company, error)
+	// Upsert dedups on (country, reg_no), persists the enriched columns, and —
+	// when the company carries verification data — records a company_verifications
+	// row for audit/cache.
 	Upsert(ctx context.Context, company *domain.Company) error
 }
 

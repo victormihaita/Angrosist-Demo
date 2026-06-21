@@ -153,6 +153,8 @@ func (c *Core) toolSaveLead(ctx context.Context, conv *domain.Conversation, args
 		// ANAF was unavailable — upsert a minimal record from agent-collected args.
 		company = &domain.Company{
 			CUI:      cui,
+			Country:  "RO",
+			RegNo:    cui,
 			Name:     strArg(args["company_name"]),
 			IsActive: true,
 		}

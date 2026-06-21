@@ -67,7 +67,7 @@ func Init() {
 		contactRepo := pgadapter.NewContactRepo()
 		leadRepo := pgadapter.NewLeadRepo()
 		sourcingRepo := pgadapter.NewSourcingRepo()
-		verifier := anaf.NewClient()
+		verifier := newVerifier()
 
 		llm := newLLM()
 		runner := agent.New(
@@ -138,6 +138,25 @@ func queueTimeout() time.Duration {
 func GetContainer() *Container {
 	Init()
 	return container
+}
+
+// newVerifier selects the company-verification adapter behind the
+// ports.CompanyDataProvider seam, by ANAF_PROVIDER:
+//
+//	demoanaf (default) — the richer DemoANAF REST client (ONRC, administrators,
+//	                     CAEN, derived roles); recommended for prod.
+//	anaf               — the raw ANAF VAT-payer client, kept as a resilience
+//	                     fallback behind the same port.
+//
+// ANAF_DEMO_MODE=true makes either client return deterministic demo data with no
+// network call. Base URLs come from env (DEMOANAF_BASE_URL); nothing hardcoded.
+func newVerifier() ports.CompanyDataProvider {
+	switch os.Getenv("ANAF_PROVIDER") {
+	case "anaf":
+		return anaf.NewClient()
+	default:
+		return anaf.NewDemoANAFClient()
+	}
 }
 
 // newLLM selects the LLM adapter based on the LLM_PROVIDER environment variable.

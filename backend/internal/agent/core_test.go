@@ -84,6 +84,12 @@ func (m *mockCompanyRepo) GetByCUI(ctx context.Context, cui string) (*domain.Com
 	}
 	return nil, errors.New("not found")
 }
+func (m *mockCompanyRepo) GetByRegNo(ctx context.Context, country, regNo string) (*domain.Company, error) {
+	if c, ok := m.byCUI[regNo]; ok {
+		return c, nil
+	}
+	return nil, errors.New("not found")
+}
 func (m *mockCompanyRepo) Upsert(ctx context.Context, company *domain.Company) error {
 	m.upserted = append(m.upserted, company)
 	if m.byCUI == nil {
