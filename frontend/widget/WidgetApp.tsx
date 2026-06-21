@@ -1,10 +1,5 @@
 import { useState, useRef, useEffect } from 'react'
-import { sendMessage, type ExtractedFields } from '../src/lib/api'
-
-interface Message {
-  role: 'user' | 'assistant'
-  content: string
-}
+import { useChat } from '@/hooks/useChat'
 
 interface Props {
   apiUrl?: string
@@ -13,47 +8,39 @@ interface Props {
 
 const CONV_KEY = 'angrosist_widget_conv_id'
 
+// `widget-entry.tsx` already stashes `config.apiUrl` on
+// `window.__ANGROSIST_API_URL__` at module init (before this component renders),
+// so getApiBase() resolves correctly on the first send. The effect below keeps
+// the global in sync if the prop changes.
 export function WidgetApp({ apiUrl, onClose }: Props) {
-  const [messages, setMessages] = useState<Message[]>([
-    {
-      role: 'assistant',
-      content: 'Bună ziua! Sunt asistentul Euro Intermed. Cu ce vă pot ajuta?',
-    },
-  ])
+  const { messages, typing, extracted: _extracted, send } = useChat({
+    convStorageKey: CONV_KEY,
+    greeting: 'Bună ziua! Sunt asistentul Euro Intermed. Cu ce vă pot ajuta?',
+    errorMessage: 'Eroare de rețea. Încercați din nou.',
+  })
   const [input, setInput] = useState('')
-  const [loading, setLoading] = useState(false)
-  const [_extracted, setExtracted] = useState<ExtractedFields>({})
-  const convIdRef = useRef<string | null>(sessionStorage.getItem(CONV_KEY))
   const bottomRef = useRef<HTMLDivElement>(null)
 
-  // Override API_URL if provided (side effect — keep out of render).
+  // Keep the global override in sync with the prop (side effect, out of render).
   useEffect(() => {
     if (apiUrl) {
       ;(window as unknown as Record<string, unknown>).__ANGROSIST_API_URL__ = apiUrl
     }
   }, [apiUrl])
 
-  async function handleSend() {
-    const text = input.trim()
-    if (!text || loading) return
+  // Auto-scroll on new messages / typing changes.
+  useEffect(() => {
+    const t = setTimeout(
+      () => bottomRef.current?.scrollIntoView({ behavior: 'smooth' }),
+      50,
+    )
+    return () => clearTimeout(t)
+  }, [messages, typing])
+
+  function handleSend() {
+    if (!input.trim() || typing) return
+    send(input)
     setInput('')
-    setMessages((p) => [...p, { role: 'user', content: text }])
-    setLoading(true)
-    try {
-      const resp = await sendMessage(convIdRef.current, text)
-      convIdRef.current = resp.conversation_id
-      sessionStorage.setItem(CONV_KEY, resp.conversation_id)
-      setExtracted(resp.extracted ?? {})
-      setMessages((p) => [...p, { role: 'assistant', content: resp.reply }])
-    } catch {
-      setMessages((p) => [
-        ...p,
-        { role: 'assistant', content: 'Eroare de rețea. Încercați din nou.' },
-      ])
-    } finally {
-      setLoading(false)
-      setTimeout(() => bottomRef.current?.scrollIntoView({ behavior: 'smooth' }), 50)
-    }
   }
 
   return (
@@ -111,7 +98,7 @@ export function WidgetApp({ apiUrl, onClose }: Props) {
             </div>
           </div>
         ))}
-        {loading && (
+        {typing && (
           <div style={{ display: 'flex', gap: '4px', padding: '8px 0' }}>
             {[0, 1, 2].map((i) => (
               <div
@@ -135,7 +122,7 @@ export function WidgetApp({ apiUrl, onClose }: Props) {
           onChange={(e) => setInput(e.target.value)}
           onKeyDown={(e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleSend() } }}
           placeholder="Mesaj..."
-          disabled={loading}
+          disabled={typing}
           style={{
             flex: 1, padding: '8px 12px', borderRadius: '8px',
             border: '1px solid #e5e7eb', outline: 'none', fontSize: '14px',
@@ -143,11 +130,11 @@ export function WidgetApp({ apiUrl, onClose }: Props) {
         />
         <button
           onClick={handleSend}
-          disabled={loading || !input.trim()}
+          disabled={typing || !input.trim()}
           style={{
             padding: '8px 14px', background: '#111827', color: '#fff',
             border: 'none', borderRadius: '8px', cursor: 'pointer',
-            opacity: loading || !input.trim() ? 0.5 : 1,
+            opacity: typing || !input.trim() ? 0.5 : 1,
           }}
         >
           ›
