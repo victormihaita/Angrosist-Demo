@@ -53,6 +53,10 @@ func (m *mockConvRepo) UpdateExtracted(ctx context.Context, id string, extracted
 	m.conv.Extracted = extracted
 	return nil
 }
+func (m *mockConvRepo) SetBotActive(ctx context.Context, id string, active bool) error {
+	m.conv.BotActive = active
+	return nil
+}
 
 type mockMsgRepo struct {
 	appended []*domain.Message
@@ -124,8 +128,9 @@ func (m *mockContactRepo) Update(ctx context.Context, contact *domain.Contact) e
 }
 
 type mockLeadRepo struct {
-	created  []*domain.Lead
-	existing *domain.Lead
+	created    []*domain.Lead
+	existing   *domain.Lead
+	humanFlags [][2]bool // each entry: {needsHuman, botActive}
 }
 
 func (m *mockLeadRepo) Create(ctx context.Context, lead *domain.Lead) error {
@@ -140,6 +145,10 @@ func (m *mockLeadRepo) GetByConversationID(ctx context.Context, convID string) (
 	return nil, errors.New("no lead")
 }
 func (m *mockLeadRepo) UpdateCompanyContact(ctx context.Context, leadID, companyID, contactID string) error {
+	return nil
+}
+func (m *mockLeadRepo) SetHumanFlagsByConversation(ctx context.Context, convID string, needsHuman, botActive bool) error {
+	m.humanFlags = append(m.humanFlags, [2]bool{needsHuman, botActive})
 	return nil
 }
 func (m *mockLeadRepo) List(ctx context.Context) ([]*domain.LeadSummary, error) { return nil, nil }
@@ -206,7 +215,7 @@ func countByRole(msgs []*domain.Message, role string) int {
 // --- tests -------------------------------------------------------------------
 
 func TestRunTurn_PlainText(t *testing.T) {
-	conv := &mockConvRepo{conv: &domain.Conversation{ID: "conv-1", State: domain.StateGreeting}}
+	conv := &mockConvRepo{conv: &domain.Conversation{ID: "conv-1", State: domain.StateGreeting, BotActive: true}}
 	msg := &mockMsgRepo{}
 	llm := &scriptedLLM{responses: []*ports.LLMResponse{
 		{Text: "Bună ziua! Cu ce vă pot ajuta?"},
@@ -231,8 +240,8 @@ func TestRunTurn_PlainText(t *testing.T) {
 	if llm.calls[0].System != systemPrompt {
 		t.Fatalf("system prompt not passed to LLM")
 	}
-	if len(llm.calls[0].Tools) != 2 {
-		t.Fatalf("expected 2 tool defs, got %d", len(llm.calls[0].Tools))
+	if len(llm.calls[0].Tools) != 3 {
+		t.Fatalf("expected 3 tool defs, got %d", len(llm.calls[0].Tools))
 	}
 
 	// Persisted: 1 user + 1 model message.
@@ -250,7 +259,7 @@ func TestRunTurn_PlainText(t *testing.T) {
 }
 
 func TestRunTurn_VerifyCompanyToolCall(t *testing.T) {
-	conv := &mockConvRepo{conv: &domain.Conversation{ID: "conv-1", State: domain.StateQualifying}}
+	conv := &mockConvRepo{conv: &domain.Conversation{ID: "conv-1", State: domain.StateQualifying, BotActive: true}}
 	msg := &mockMsgRepo{}
 	comp := &mockCompanyRepo{}
 	verifier := &mockVerifier{company: &domain.Company{
@@ -324,7 +333,7 @@ func TestRunTurn_VerifyCompanyToolCall(t *testing.T) {
 }
 
 func TestRunTurn_VerifyCompanyUnavailable(t *testing.T) {
-	conv := &mockConvRepo{conv: &domain.Conversation{ID: "conv-1", State: domain.StateQualifying}}
+	conv := &mockConvRepo{conv: &domain.Conversation{ID: "conv-1", State: domain.StateQualifying, BotActive: true}}
 	msg := &mockMsgRepo{}
 	verifier := &mockVerifier{err: errors.New("ANAF service unavailable")}
 
@@ -358,7 +367,7 @@ func TestBuildHistory_RebuildsToolCallsAndResults(t *testing.T) {
 		{Role: "tool", Content: `{"found":true,"active":true}`, ToolCallID: "verify_company"},
 		{Role: "model", Content: "Compania este verificată."},
 	}}
-	conv := &mockConvRepo{conv: &domain.Conversation{ID: "conv-1", State: domain.StateQualifying}}
+	conv := &mockConvRepo{conv: &domain.Conversation{ID: "conv-1", State: domain.StateQualifying, BotActive: true}}
 	core := newTestCore(&scriptedLLM{}, conv, msg, &mockCompanyRepo{}, &mockContactRepo{},
 		&mockLeadRepo{}, &mockSourcingRepo{}, &mockVerifier{})
 

@@ -30,6 +30,9 @@ func (f *fakeLeadRepo) GetByConversationID(context.Context, string) (*domain.Lea
 func (f *fakeLeadRepo) UpdateCompanyContact(context.Context, string, string, string) error {
 	return nil
 }
+func (f *fakeLeadRepo) SetHumanFlagsByConversation(context.Context, string, bool, bool) error {
+	return nil
+}
 func (f *fakeLeadRepo) List(context.Context) ([]*domain.LeadSummary, error) { return nil, nil }
 func (f *fakeLeadRepo) GetByID(_ context.Context, _ string) (*domain.LeadDetail, error) {
 	return f.detail, f.detailErr

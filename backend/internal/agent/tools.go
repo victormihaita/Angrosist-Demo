@@ -15,7 +15,20 @@ import (
 const (
 	toolVerifyCompany = "verify_company"
 	toolSaveLead      = "save_lead"
+	toolHandoff       = "handoff_to_human"
 )
+
+// handoffReasons is the documented enum for handoff_to_human.reason (AI_AGENT_SPEC
+// §5.4). Args are re-validated server-side: an unknown reason is normalized to
+// "other" so a jailbroken model cannot smuggle arbitrary values.
+var handoffReasons = map[string]bool{
+	"user_request":               true,
+	"confusion_or_contradiction": true,
+	"out_of_scope":               true,
+	"verification_failed":        true,
+	"unclassifiable_need":        true,
+	"other":                      true,
+}
 
 // toolDefs returns the vendor-neutral tool declarations the agent exposes to the
 // LLM. Parameters are JSON Schema objects; the adapter translates them into the
@@ -78,6 +91,25 @@ func toolDefs() []ports.ToolDef {
 				"required": ["product_name", "quantity", "unit", "delivery_location", "cui", "company_name", "phone", "email"]
 			}`),
 		},
+		{
+			Name:        toolHandoff,
+			Description: "Escaladează conversația către un coleg uman. Folosește când utilizatorul cere un om, este confuz sau contradictoriu, cererea este în afara scopului, sau nu poți continua în siguranță.",
+			Parameters: json.RawMessage(`{
+				"type": "object",
+				"properties": {
+					"reason": {
+						"type": "string",
+						"enum": ["user_request", "confusion_or_contradiction", "out_of_scope", "verification_failed", "unclassifiable_need", "other"],
+						"description": "Motivul escaladării"
+					},
+					"summary": {
+						"type": "string",
+						"description": "Rezumat de un paragraf pentru coleg, în limba conversației"
+					}
+				},
+				"required": ["reason"]
+			}`),
+		},
 	}
 }
 
@@ -90,6 +122,8 @@ func (c *Core) executeTool(ctx context.Context, conv *domain.Conversation, call 
 		return c.toolVerifyCompany(ctx, conv, call.Args)
 	case toolSaveLead:
 		return c.toolSaveLead(ctx, conv, call.Args)
+	case toolHandoff:
+		return c.toolHandoff(ctx, conv, call.Args)
 	default:
 		return nil, fmt.Errorf("unknown tool: %s", call.Name)
 	}
@@ -194,6 +228,7 @@ func (c *Core) toolSaveLead(ctx context.Context, conv *domain.Conversation, args
 			return nil, fmt.Errorf("update sourcing request: %w", err)
 		}
 		c.updateExtracted(ctx, conv, req, phone, email, args)
+		c.notifyLeadSubmitted(ctx, conv, existingLead.ID, company, req, phone, email)
 		return map[string]any{"saved": true, "lead_id": existingLead.ID, "updated": true}, nil
 	}
 
@@ -223,6 +258,7 @@ func (c *Core) toolSaveLead(ctx context.Context, conv *domain.Conversation, args
 	}
 
 	c.updateExtracted(ctx, conv, req, phone, email, args)
+	c.notifyLeadSubmitted(ctx, conv, lead.ID, company, req, phone, email)
 	return map[string]any{"saved": true, "lead_id": lead.ID}, nil
 }
 

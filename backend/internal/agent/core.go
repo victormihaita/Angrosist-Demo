@@ -30,10 +30,33 @@ type Core struct {
 	leadRepo     ports.LeadRepo
 	sourcingRepo ports.SourcingRepo
 	verifier     ports.CompanyDataProvider
+
+	// mailer sends best-effort transactional email (lead confirmation, staff
+	// notification, handoff notification). May be nil — email is then skipped.
+	mailer ports.Mailer
+	// activityLog appends audit rows for email/handoff side effects. May be nil.
+	activityLog ports.ActivityLogRepo
+	// staffNotify is the staff inbox address for internal notifications. Empty
+	// disables staff email.
+	staffNotify string
+	// defaultLang is the locale used when the contact's language is unknown.
+	defaultLang string
+}
+
+// Notifications bundles the optional email side-effect dependencies so they can
+// be wired without widening the long-standing positional constructor. All fields
+// are optional: a nil Mailer or empty StaffNotify disables the relevant email.
+type Notifications struct {
+	Mailer      ports.Mailer
+	ActivityLog ports.ActivityLogRepo
+	StaffNotify string
+	DefaultLang string
 }
 
 // New constructs the agent core with the LLM port and the repository/service
-// ports it needs to execute tools and persist conversation state.
+// ports it needs to execute tools and persist conversation state. Email/handoff
+// notification side effects are disabled (nil mailer); use NewWithNotifications
+// to enable them.
 func New(
 	llm ports.LLM,
 	convRepo ports.ConversationRepo,
@@ -44,6 +67,27 @@ func New(
 	sourcingRepo ports.SourcingRepo,
 	verifier ports.CompanyDataProvider,
 ) *Core {
+	return NewWithNotifications(llm, convRepo, msgRepo, companyRepo, contactRepo,
+		leadRepo, sourcingRepo, verifier, Notifications{})
+}
+
+// NewWithNotifications is New plus the transactional-email/handoff side effects.
+// The defaultLang falls back to RO when empty.
+func NewWithNotifications(
+	llm ports.LLM,
+	convRepo ports.ConversationRepo,
+	msgRepo ports.MessageRepo,
+	companyRepo ports.CompanyRepo,
+	contactRepo ports.ContactRepo,
+	leadRepo ports.LeadRepo,
+	sourcingRepo ports.SourcingRepo,
+	verifier ports.CompanyDataProvider,
+	n Notifications,
+) *Core {
+	lang := n.DefaultLang
+	if lang == "" {
+		lang = domain.LocaleRO
+	}
 	return &Core{
 		llm:          llm,
 		convRepo:     convRepo,
@@ -53,6 +97,10 @@ func New(
 		leadRepo:     leadRepo,
 		sourcingRepo: sourcingRepo,
 		verifier:     verifier,
+		mailer:       n.Mailer,
+		activityLog:  n.ActivityLog,
+		staffNotify:  n.StaffNotify,
+		defaultLang:  lang,
 	}
 }
 
@@ -76,6 +124,22 @@ func (c *Core) runTurn(ctx context.Context, conversationID string, userMessage s
 	conv, err := c.convRepo.GetByID(ctx, conversationID)
 	if err != nil {
 		return "", fmt.Errorf("load conversation: %w", err)
+	}
+
+	// Muted-bot guard (FR-6.1/6.3): once a conversation has been handed off to a
+	// human (bot_active=false), the agent stays silent. Short-circuit BEFORE any
+	// LLM call so a muted conversation never incurs model spend or auto-replies.
+	if !conv.BotActive {
+		// Persist the inbound user message (if the caller did not) so the human
+		// sees it in the transcript, but do not run the model or reply.
+		if appendUser && userMessage != "" {
+			_ = c.msgRepo.Append(ctx, &domain.Message{
+				ConversationID: conversationID,
+				Role:           "user",
+				Content:        userMessage,
+			})
+		}
+		return "", nil
 	}
 
 	history, err := c.buildHistory(ctx, conversationID)

@@ -12,6 +12,10 @@ type ConversationRepo interface {
 	GetByID(ctx context.Context, id string) (*domain.Conversation, error)
 	UpdateState(ctx context.Context, id string, state domain.ConversationState) error
 	UpdateExtracted(ctx context.Context, id string, extracted map[string]any) error
+	// SetBotActive toggles conversations.bot_active (migration 018). Setting it
+	// false mutes the bot for the conversation so the worker short-circuits future
+	// turns (FR-6.1/6.3 handoff). Returns ErrNotFound when no such row exists.
+	SetBotActive(ctx context.Context, id string, active bool) error
 }
 
 type MessageRepo interface {
@@ -35,6 +39,11 @@ type LeadRepo interface {
 	Create(ctx context.Context, lead *domain.Lead) error
 	GetByConversationID(ctx context.Context, convID string) (*domain.Lead, error)
 	UpdateCompanyContact(ctx context.Context, leadID, companyID, contactID string) error
+	// SetHumanFlags sets leads.needs_human and leads.bot_active (migration 016) on
+	// the lead for a conversation, used on handoff. It is a no-op (nil error) when
+	// no lead exists yet for the conversation — handoff can happen before a lead is
+	// created, in which case only the conversation flag is flipped.
+	SetHumanFlagsByConversation(ctx context.Context, convID string, needsHuman, botActive bool) error
 	List(ctx context.Context) ([]*domain.LeadSummary, error)
 	GetByID(ctx context.Context, id string) (*domain.LeadDetail, error)
 

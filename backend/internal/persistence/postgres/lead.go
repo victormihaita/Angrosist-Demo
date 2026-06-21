@@ -48,6 +48,20 @@ func (r *LeadRepo) UpdateCompanyContact(ctx context.Context, leadID, companyID, 
 	return err
 }
 
+// SetHumanFlagsByConversation sets leads.needs_human/bot_active (migration 016)
+// for the lead of a conversation. It is a no-op (nil) when no lead exists for the
+// conversation — handoff can occur before a lead is created.
+func (r *LeadRepo) SetHumanFlagsByConversation(ctx context.Context, convID string, needsHuman, botActive bool) error {
+	_, err := GetPool().Exec(ctx, `
+		UPDATE leads SET needs_human = $2, bot_active = $3, updated_at = now()
+		WHERE conversation_id = $1::uuid
+	`, convID, needsHuman, botActive)
+	if err != nil {
+		return fmt.Errorf("set lead human flags: %w", err)
+	}
+	return nil
+}
+
 func (r *LeadRepo) List(ctx context.Context) ([]*domain.LeadSummary, error) {
 	rows, err := GetPool().Query(ctx, `
 		SELECT

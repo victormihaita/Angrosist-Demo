@@ -35,6 +35,9 @@ func (s *stubLeadRepo) GetByConversationID(context.Context, string) (*domain.Lea
 func (s *stubLeadRepo) UpdateCompanyContact(context.Context, string, string, string) error {
 	return nil
 }
+func (s *stubLeadRepo) SetHumanFlagsByConversation(context.Context, string, bool, bool) error {
+	return nil
+}
 func (s *stubLeadRepo) List(context.Context) ([]*domain.LeadSummary, error) { return nil, nil }
 func (s *stubLeadRepo) GetByID(context.Context, string) (*domain.LeadDetail, error) {
 	return s.detail, s.detailErr

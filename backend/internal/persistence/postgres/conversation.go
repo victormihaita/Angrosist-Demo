@@ -3,9 +3,11 @@ package postgres
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"time"
 
 	"github.com/angrosist/demo/internal/domain"
+	"github.com/angrosist/demo/internal/ports"
 )
 
 type ConversationRepo struct{}
@@ -16,14 +18,14 @@ func (r *ConversationRepo) Create(ctx context.Context, channel string) (*domain.
 	row := GetPool().QueryRow(ctx, `
 		INSERT INTO conversations (channel, state, extracted)
 		VALUES ($1, 'greeting', '{}')
-		RETURNING id, channel, state, extracted, created_at, updated_at
+		RETURNING id, channel, state, extracted, bot_active, COALESCE(language, ''), created_at, updated_at
 	`, channel)
 	return scanConversation(row)
 }
 
 func (r *ConversationRepo) GetByID(ctx context.Context, id string) (*domain.Conversation, error) {
 	row := GetPool().QueryRow(ctx, `
-		SELECT id, channel, state, extracted, created_at, updated_at
+		SELECT id, channel, state, extracted, bot_active, COALESCE(language, ''), created_at, updated_at
 		FROM conversations WHERE id = $1
 	`, id)
 	return scanConversation(row)
@@ -47,6 +49,22 @@ func (r *ConversationRepo) UpdateExtracted(ctx context.Context, id string, extra
 	return err
 }
 
+// SetBotActive toggles conversations.bot_active (migration 018). Used on handoff
+// to mute the bot for the conversation. Returns ErrNotFound when no such row
+// exists.
+func (r *ConversationRepo) SetBotActive(ctx context.Context, id string, active bool) error {
+	tag, err := GetPool().Exec(ctx, `
+		UPDATE conversations SET bot_active = $1, updated_at = NOW() WHERE id = $2::uuid
+	`, active, id)
+	if err != nil {
+		return fmt.Errorf("set bot_active: %w", err)
+	}
+	if tag.RowsAffected() == 0 {
+		return ports.ErrNotFound
+	}
+	return nil
+}
+
 type scannable interface {
 	Scan(dest ...any) error
 }
@@ -56,7 +74,7 @@ func scanConversation(row scannable) (*domain.Conversation, error) {
 	var rawExtracted []byte
 	var updatedAt time.Time
 
-	err := row.Scan(&c.ID, &c.Channel, &c.State, &rawExtracted, &c.CreatedAt, &updatedAt)
+	err := row.Scan(&c.ID, &c.Channel, &c.State, &rawExtracted, &c.BotActive, &c.Language, &c.CreatedAt, &updatedAt)
 	if err != nil {
 		return nil, err
 	}

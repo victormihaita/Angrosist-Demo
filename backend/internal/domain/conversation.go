@@ -17,6 +17,13 @@ type Conversation struct {
 	Channel   string
 	State     ConversationState
 	Extracted map[string]any
+	// BotActive mirrors conversations.bot_active (migration 018). When false the
+	// bot is muted (handed off to a human) and the worker short-circuits the turn.
+	// Defaults to true for new conversations.
+	BotActive bool
+	// Language is the detected/declared conversation language ("ro" | "en"), used
+	// to localize transactional email. Empty when unknown.
+	Language  string
 	CreatedAt time.Time
 	UpdatedAt time.Time
 }

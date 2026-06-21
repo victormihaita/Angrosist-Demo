@@ -19,6 +19,7 @@ import (
 	"github.com/angrosist/demo/internal/auth"
 	"github.com/angrosist/demo/internal/broker"
 	"github.com/angrosist/demo/internal/domain"
+	"github.com/angrosist/demo/internal/email"
 	pgadapter "github.com/angrosist/demo/internal/persistence/postgres"
 	"github.com/angrosist/demo/internal/ports"
 	"github.com/angrosist/demo/internal/queue"
@@ -93,10 +94,17 @@ func Init() {
 		authSvc := authhttp.NewService(userRepo, tokens)
 
 		llm := newLLM()
-		runner := agent.New(
+		mailer := newMailer()
+		runner := agent.NewWithNotifications(
 			llm,
 			convRepo, msgRepo, companyRepo, contactRepo,
 			leadRepo, sourcingRepo, verifier,
+			agent.Notifications{
+				Mailer:      mailer,
+				ActivityLog: activityRepo,
+				StaffNotify: os.Getenv("STAFF_NOTIFY_EMAIL"),
+				DefaultLang: os.Getenv("DEFAULT_LANG"),
+			},
 		)
 
 		// Per-conversation lock: Postgres advisory lock in all real wirings (works
@@ -187,6 +195,35 @@ func newVerifier() ports.CompanyDataProvider {
 		return anaf.NewClient()
 	default:
 		return anaf.NewDemoANAFClient()
+	}
+}
+
+// newMailer selects the Mailer adapter behind the ports.Mailer seam by
+// MAIL_PROVIDER:
+//
+//	log  (default) — renders and logs a non-PII summary instead of sending, so
+//	                 docker compose / tests / the demo need no SMTP credentials.
+//	smtp           — delivers over SMTP+STARTTLS using SMTP_HOST/PORT/USER/
+//	                 PASSWORD + MAIL_FROM. Any EU provider that speaks SMTP
+//	                 (Brevo/Mailgun/SendGrid) works; no vendor SDK is added.
+//
+// All values come from env (Secret Manager in prod); nothing is hardcoded.
+func newMailer() ports.Mailer {
+	switch os.Getenv("MAIL_PROVIDER") {
+	case "smtp":
+		m, err := email.NewSMTPMailer(email.SMTPConfig{
+			Host:     os.Getenv("SMTP_HOST"),
+			Port:     os.Getenv("SMTP_PORT"),
+			User:     os.Getenv("SMTP_USER"),
+			Password: os.Getenv("SMTP_PASSWORD"),
+			From:     os.Getenv("MAIL_FROM"),
+		})
+		if err != nil {
+			log.Fatalf("container: smtp mailer: %v", err)
+		}
+		return m
+	default:
+		return email.NewLogMailer()
 	}
 }
 
