@@ -1,74 +1,95 @@
 import { useNavigate } from 'react-router-dom'
+import { AlertTriangle } from 'lucide-react'
 import {
-  Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
 } from '@/components/ui/table'
 import { Badge } from '@/components/ui/badge'
-import type { Lead } from '@/lib/api'
-
-const STATUS_VARIANT: Record<string, 'default' | 'secondary' | 'destructive' | 'outline'> = {
-  new: 'default',
-  qualifying: 'secondary',
-  confirmed: 'outline',
-  failed: 'destructive',
-}
-
-const STATUS_LABEL: Record<string, string> = {
-  new: 'Nou',
-  qualifying: 'În calificare',
-  confirmed: 'Confirmat',
-  failed: 'Eșuat',
-}
+import { StatusBadge } from '@/components/dashboard/StatusBadge'
+import { cn } from '@/lib/utils'
+import { t } from '@/lib/strings'
+import type { LeadSummary, PublicUser } from '@/lib/api'
 
 interface Props {
-  leads: Lead[]
+  leads: LeadSummary[]
+  users: PublicUser[]
 }
 
-export function LeadTable({ leads }: Props) {
-  const navigate = useNavigate()
+function formatValue(v: number | null): string {
+  if (v == null) return t.common.none
+  return new Intl.NumberFormat('ro-RO', {
+    style: 'currency',
+    currency: 'RON',
+    maximumFractionDigits: 0,
+  }).format(v)
+}
 
-  if (leads.length === 0) {
-    return (
-      <div className="flex flex-col items-center justify-center py-20 text-muted-foreground text-sm gap-2">
-        <span>Nu există lead-uri încă.</span>
-        <a href="/" className="text-foreground underline underline-offset-2">Testează chat-ul →</a>
-      </div>
-    )
-  }
+export function LeadTable({ leads, users }: Props) {
+  const navigate = useNavigate()
+  const userById = new Map(users.map((u) => [u.id, u.name || u.email]))
 
   return (
     <div className="rounded-lg border overflow-hidden">
-      {/* overflow-x-auto keeps horizontal scroll inside the card, not the page */}
       <div className="overflow-x-auto">
-        <Table className="min-w-[640px]">
+        <Table className="min-w-[860px]">
           <TableHeader>
             <TableRow>
-              <TableHead>Companie</TableHead>
-              <TableHead>CUI</TableHead>
-              <TableHead>Produs</TableHead>
-              <TableHead>Cantitate</TableHead>
-              <TableHead>Locație</TableHead>
-              <TableHead>Status</TableHead>
-              <TableHead>Dată</TableHead>
+              <TableHead>{t.pipeline.colCompany}</TableHead>
+              <TableHead>{t.pipeline.colProduct}</TableHead>
+              <TableHead>{t.pipeline.colQuantity}</TableHead>
+              <TableHead>{t.pipeline.colLocation}</TableHead>
+              <TableHead>{t.pipeline.colStatus}</TableHead>
+              <TableHead>{t.pipeline.colAssignee}</TableHead>
+              <TableHead className="text-right">{t.pipeline.colValue}</TableHead>
+              <TableHead>{t.pipeline.colCreated}</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
             {leads.map((lead) => (
               <TableRow
                 key={lead.id}
-                className="cursor-pointer"
+                className={cn(
+                  'cursor-pointer',
+                  lead.needs_human && 'bg-destructive/5 hover:bg-destructive/10',
+                )}
                 onClick={() => navigate(`/dashboard/${lead.id}`)}
               >
-                <TableCell className="font-medium">{lead.company_name || '—'}</TableCell>
-                <TableCell className="font-mono text-xs text-muted-foreground">{lead.cui || '—'}</TableCell>
-                <TableCell>{lead.product_name || '—'}</TableCell>
-                <TableCell>
-                  {lead.quantity != null ? `${lead.quantity} ${lead.unit}` : '—'}
+                <TableCell className="font-medium">
+                  <span className="flex items-center gap-1.5">
+                    {lead.needs_human && (
+                      <AlertTriangle
+                        className="h-3.5 w-3.5 text-destructive shrink-0"
+                        aria-label={t.pipeline.needsHuman}
+                      />
+                    )}
+                    {lead.company_name || t.common.none}
+                  </span>
                 </TableCell>
-                <TableCell>{lead.delivery_location || '—'}</TableCell>
+                <TableCell>{lead.product_name || t.common.none}</TableCell>
+                <TableCell className="whitespace-nowrap">
+                  {lead.quantity != null
+                    ? `${lead.quantity} ${lead.unit}`
+                    : t.common.none}
+                </TableCell>
+                <TableCell>{lead.delivery_location || t.common.none}</TableCell>
                 <TableCell>
-                  <Badge variant={STATUS_VARIANT[lead.status] ?? 'secondary'}>
-                    {STATUS_LABEL[lead.status] ?? lead.status}
-                  </Badge>
+                  <StatusBadge status={lead.status} />
+                </TableCell>
+                <TableCell className="whitespace-nowrap">
+                  {lead.assigned_to ? (
+                    userById.get(lead.assigned_to) ?? lead.assigned_to
+                  ) : (
+                    <Badge variant="outline" className="text-muted-foreground">
+                      {t.pipeline.unassigned}
+                    </Badge>
+                  )}
+                </TableCell>
+                <TableCell className="text-right whitespace-nowrap tabular-nums">
+                  {formatValue(lead.offer_value)}
                 </TableCell>
                 <TableCell className="text-muted-foreground text-xs whitespace-nowrap">
                   {new Date(lead.created_at).toLocaleDateString('ro-RO')}
