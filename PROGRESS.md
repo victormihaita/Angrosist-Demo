@@ -3,8 +3,9 @@
 > **This is the file to open to see what's done, what's happening, and what's next.** Updated and committed after every unit of work. The full task list lives in `docs/BUILD_PLAN.md`; this is the running status on top of it.
 
 **Last updated:** 2026-06-21
-**Current milestone:** M1 — Foundation ✅ (buildable scope done; provisioning + Meta verification are owner actions)
-**Next milestone:** M2 — Agent core + web widget (channel-agnostic flow engine, LLM port + Claude adapter, async worker, WS/SSE widget)
+**Current milestone:** M2 — Agent core + web widget (in progress)
+**Done:** Epic 2.1 ✅ — vendor-neutral LLM port + agent-core split + Gemini & Claude adapters (provider swap via `LLM_PROVIDER`).
+**Next:** Epic 2.2 (async worker, idempotency, per-conversation lock) → Epic 2.3 (widget over WS/SSE + typing).
 **Branches:** `main` = the **Vercel demo** (frozen at pre-today `b5d1b3d`, do not push WIP here). `develop` = **active build** (this is where we work). Push auth fixed (gh active account → `victormihaita`).
 
 ---
@@ -53,6 +54,7 @@ Legend: ✅ done · ⏳ in progress · ⬜ not started
 
 ## Changelog (newest first)
 
+- **2026-06-21** — **M2 Epic 2.1 done.** Split the coupled Gemini runner into a vendor-neutral `LLM` port + agent core (turn loop, tool registry, state machine, RO prompt) + thin Gemini adapter, then added a **Claude/Anthropic adapter** behind the same port. `LLM_PROVIDER` env swaps providers (gemini default, claude for prod); agent core has zero vendor SDK imports (verified). Unit-tested with mock LLM + the Claude mapping helpers.
 - **2026-06-21** — **M1 cloud-ready (deferred provisioning).** `deploy/terraform/`: 8 modules (Artifact Registry, IAM SAs, Secret Manager, Cloud SQL, GCS, Cloud Run, Cloud Tasks, Cloud Scheduler) composed per env (dev/staging/prod); EU region, least-privilege, no secret values. `.github/workflows/`: CI runs on push; GCP deploy jobs DORMANT (workflow_dispatch + `DEPLOY_ENABLED` guard) via Workload Identity Federation. Dockerfile now builds the worker too. Validated with tofu + actionlint. **M1 buildable scope complete.**
 - **2026-06-21** — **Full Phase-1 schema** (migrations 009-023): lookups, users, categories, company_verifications/financials, consents, listings, buyer_profiles, documents, activity_logs, templates; enriched companies/contacts/leads/etc.; all indexes + GDPR cascade. Tested clean apply + idempotent on scratch Postgres.
 - **2026-06-21** — **Branch split.** `main` reverted to `b5d1b3d` (pre-today) so Vercel keeps serving the stable demo; all today's work moved to the new `develop` branch, which is now the active build line. `origin` updated to match.
