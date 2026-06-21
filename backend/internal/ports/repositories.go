@@ -16,6 +16,18 @@ type ConversationRepo interface {
 type MessageRepo interface {
 	Append(ctx context.Context, msg *domain.Message) error
 	ListByConversation(ctx context.Context, conversationID string) ([]*domain.Message, error)
+	// SeenProviderMsg reports whether an inbound message with this provider id has
+	// already been recorded. It backs idempotency: a redelivered inbound message
+	// is processed at most once. Implementations rely on the partial-unique index
+	// messages_provider_msg_uq (migration 018).
+	SeenProviderMsg(ctx context.Context, providerMsgID string) (bool, error)
+	// ClaimProviderMsg atomically records an inbound provider message id for a
+	// conversation and reports whether this caller won the claim (true = first
+	// time, proceed; false = a concurrent/earlier turn already claimed it, skip).
+	// It is implemented as an insert that defers to the partial-unique index, so
+	// the check-and-mark is a single atomic operation safe under at-least-once
+	// delivery. providerMsgID must be non-empty.
+	ClaimProviderMsg(ctx context.Context, conversationID, providerMsgID, content string) (claimed bool, err error)
 }
 
 type LeadRepo interface {

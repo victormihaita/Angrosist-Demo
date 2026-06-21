@@ -61,6 +61,18 @@ func New(
 // until the model produces final text, and returns that text. Assistant and tool
 // messages are persisted as they are produced.
 func (c *Core) RunTurn(ctx context.Context, conversationID string, userMessage string) (string, error) {
+	return c.runTurn(ctx, conversationID, userMessage, true)
+}
+
+// RunTurnPersisted is RunTurn for callers that have already persisted the inbound
+// user message (e.g. the async worker, which records it atomically with the
+// provider-message-id idempotency claim). It is otherwise identical and reuses
+// the persisted message as part of the rebuilt history.
+func (c *Core) RunTurnPersisted(ctx context.Context, conversationID string, userMessage string) (string, error) {
+	return c.runTurn(ctx, conversationID, userMessage, false)
+}
+
+func (c *Core) runTurn(ctx context.Context, conversationID string, userMessage string, appendUser bool) (string, error) {
 	conv, err := c.convRepo.GetByID(ctx, conversationID)
 	if err != nil {
 		return "", fmt.Errorf("load conversation: %w", err)
@@ -71,13 +83,15 @@ func (c *Core) RunTurn(ctx context.Context, conversationID string, userMessage s
 		return "", fmt.Errorf("build history: %w", err)
 	}
 
-	// Persist the user message.
-	if err := c.msgRepo.Append(ctx, &domain.Message{
-		ConversationID: conversationID,
-		Role:           "user",
-		Content:        userMessage,
-	}); err != nil {
-		return "", err
+	// Persist the user message unless the caller already did (worker path).
+	if appendUser {
+		if err := c.msgRepo.Append(ctx, &domain.Message{
+			ConversationID: conversationID,
+			Role:           "user",
+			Content:        userMessage,
+		}); err != nil {
+			return "", err
+		}
 	}
 
 	// Advance state on first user message.
@@ -85,8 +99,13 @@ func (c *Core) RunTurn(ctx context.Context, conversationID string, userMessage s
 		_ = c.convRepo.UpdateState(ctx, conversationID, domain.StateQualifying)
 	}
 
-	// Seed the running transcript with prior history plus this user turn.
-	messages := append(history, ports.LLMMessage{Role: "user", Text: userMessage})
+	// Seed the running transcript with prior history. When this turn's user
+	// message was persisted by the caller (worker path), buildHistory already
+	// includes it; otherwise (sync web path) append it now so the model sees it.
+	messages := history
+	if appendUser {
+		messages = append(messages, ports.LLMMessage{Role: "user", Text: userMessage})
+	}
 
 	for round := 0; round < maxToolRounds; round++ {
 		resp, err := c.llm.Complete(ctx, ports.LLMRequest{

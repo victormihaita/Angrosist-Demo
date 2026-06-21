@@ -21,10 +21,15 @@ type ChatResponse struct {
 type ChatUseCase struct {
 	convRepo ports.ConversationRepo
 	runner   ports.AgentRunner
+	locker   ports.Locker
 }
 
-func NewChatUseCase(convRepo ports.ConversationRepo, runner ports.AgentRunner) *ChatUseCase {
-	return &ChatUseCase{convRepo: convRepo, runner: runner}
+// NewChatUseCase wires the synchronous chat path. The locker serializes turns
+// per conversation: even though /api/chat stays synchronous for now (the async
+// transport flip lands in Epic 2.3), concurrent requests for the same
+// conversation run one at a time, preserving ordering and avoiding double-writes.
+func NewChatUseCase(convRepo ports.ConversationRepo, runner ports.AgentRunner, locker ports.Locker) *ChatUseCase {
+	return &ChatUseCase{convRepo: convRepo, runner: runner, locker: locker}
 }
 
 func (uc *ChatUseCase) RunTurn(ctx context.Context, req ChatRequest) (*ChatResponse, error) {
@@ -37,7 +42,15 @@ func (uc *ChatUseCase) RunTurn(ctx context.Context, req ChatRequest) (*ChatRespo
 		convID = conv.ID
 	}
 
-	reply, err := uc.runner.RunTurn(ctx, convID, req.Message)
+	var reply string
+	err := uc.locker.WithConversationLock(ctx, convID, func(ctx context.Context) error {
+		r, err := uc.runner.RunTurn(ctx, convID, req.Message)
+		if err != nil {
+			return err
+		}
+		reply = r
+		return nil
+	})
 	if err != nil {
 		return nil, err
 	}

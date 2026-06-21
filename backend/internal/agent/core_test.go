@@ -66,6 +66,12 @@ func (m *mockMsgRepo) Append(ctx context.Context, msg *domain.Message) error {
 func (m *mockMsgRepo) ListByConversation(ctx context.Context, conversationID string) ([]*domain.Message, error) {
 	return m.history, nil
 }
+func (m *mockMsgRepo) SeenProviderMsg(ctx context.Context, providerMsgID string) (bool, error) {
+	return false, nil
+}
+func (m *mockMsgRepo) ClaimProviderMsg(ctx context.Context, conversationID, providerMsgID, content string) (bool, error) {
+	return true, nil
+}
 
 type mockCompanyRepo struct {
 	byCUI    map[string]*domain.Company

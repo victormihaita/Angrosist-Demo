@@ -2,7 +2,9 @@ package app
 
 import (
 	"context"
+	"log"
 	"os"
+	"strconv"
 	"sync"
 	"time"
 
@@ -13,6 +15,7 @@ import (
 	geminillm "github.com/angrosist/demo/internal/agent/llm/gemini"
 	pgadapter "github.com/angrosist/demo/internal/persistence/postgres"
 	"github.com/angrosist/demo/internal/ports"
+	"github.com/angrosist/demo/internal/queue"
 	"github.com/angrosist/demo/internal/usecases"
 	"github.com/angrosist/demo/internal/verification/anaf"
 )
@@ -29,6 +32,16 @@ type Container struct {
 	DB    interface{ Ping(context.Context) error }
 	Chat  *usecases.ChatUseCase
 	Leads *usecases.LeadUseCase
+
+	// Locker serializes agent turns per conversation. The synchronous /api/chat
+	// path runs its turn under this lock so concurrent same-conversation requests
+	// serialize (M2 Epic 2.2), even though the transport stays synchronous for now.
+	Locker ports.Locker
+	// Worker is the async turn processor: lock + idempotency + agent turn. It is
+	// shared by the local queue handler and the cmd/worker HTTP endpoint.
+	Worker ports.TurnProcessor
+	// Queue enqueues agent-turn jobs. Selected by QUEUE_PROVIDER (local | cloudtasks).
+	Queue ports.Queue
 }
 
 var (
@@ -57,12 +70,58 @@ func Init() {
 			leadRepo, sourcingRepo, verifier,
 		)
 
+		// Per-conversation lock: Postgres advisory lock in all real wirings (works
+		// across worker instances). The in-memory locker exists for tests.
+		locker := pgadapter.NewLocker()
+
+		// Async turn processor: lock + idempotency + agent turn. Shared by the
+		// local queue handler and the cmd/worker HTTP endpoint.
+		worker := usecases.NewTurnWorker(runner, locker, msgRepo)
+
+		// Queue selection by QUEUE_PROVIDER. The local adapter binds the processor
+		// as its in-process handler; Cloud Tasks pushes to the worker URL.
+		q := newQueue(worker)
+
 		container = &Container{
-			DB:    &dbPinger{pool: pool},
-			Chat:  usecases.NewChatUseCase(convRepo, runner),
-			Leads: usecases.NewLeadUseCase(leadRepo),
+			DB:     &dbPinger{pool: pool},
+			Chat:   usecases.NewChatUseCase(convRepo, runner, locker),
+			Leads:  usecases.NewLeadUseCase(leadRepo),
+			Locker: locker,
+			Worker: worker,
+			Queue:  q,
 		}
 	})
+}
+
+// newQueue selects the Queue adapter from QUEUE_PROVIDER. "local" (default) runs
+// the processor in-process so the demo works without external infra; "cloudtasks"
+// pushes jobs to the worker URL (WORKER_URL) for durable async processing in prod.
+func newQueue(processor ports.TurnProcessor) ports.Queue {
+	switch os.Getenv("QUEUE_PROVIDER") {
+	case "cloudtasks":
+		ct, err := queue.NewCloudTasks(queue.CloudTasksConfig{
+			WorkerURL: os.Getenv("WORKER_URL"),
+			AuthToken: os.Getenv("WORKER_AUTH_TOKEN"),
+			Timeout:   queueTimeout(),
+		})
+		if err != nil {
+			log.Fatalf("container: cloudtasks queue: %v", err)
+		}
+		return ct
+	default:
+		return queue.NewLocal(processor)
+	}
+}
+
+// queueTimeout reads QUEUE_PUSH_TIMEOUT_SECONDS (optional); 0 lets the adapter
+// apply its default.
+func queueTimeout() time.Duration {
+	if v := os.Getenv("QUEUE_PUSH_TIMEOUT_SECONDS"); v != "" {
+		if n, err := strconv.Atoi(v); err == nil && n > 0 {
+			return time.Duration(n) * time.Second
+		}
+	}
+	return 0
 }
 
 func GetContainer() *Container {

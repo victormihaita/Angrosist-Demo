@@ -51,6 +51,50 @@ func (r *MessageRepo) ListByConversation(ctx context.Context, conversationID str
 	return msgs, rows.Err()
 }
 
+// SeenProviderMsg reports whether an inbound provider message id was already
+// recorded. It reads through the partial-unique index messages_provider_msg_uq
+// (migration 018). An empty providerMsgID is never "seen".
+func (r *MessageRepo) SeenProviderMsg(ctx context.Context, providerMsgID string) (bool, error) {
+	if providerMsgID == "" {
+		return false, nil
+	}
+	var exists bool
+	err := GetPool().QueryRow(ctx, `
+		SELECT EXISTS (
+			SELECT 1 FROM messages WHERE provider_msg_id = $1
+		)
+	`, providerMsgID).Scan(&exists)
+	if err != nil {
+		return false, err
+	}
+	return exists, nil
+}
+
+// ClaimProviderMsg atomically records the inbound user message with its provider
+// id and reports whether this caller won the claim. The partial-unique index
+// messages_provider_msg_uq makes the INSERT ... ON CONFLICT DO NOTHING the single
+// source of truth: exactly one concurrent worker inserts the row (claimed=true);
+// all others see zero rows affected (claimed=false) and must skip processing.
+//
+// Persisting the user message here means the agent core must not re-append it for
+// provider-id-bearing turns; the worker passes the message through to the core
+// purely as transient turn input.
+func (r *MessageRepo) ClaimProviderMsg(ctx context.Context, conversationID, providerMsgID, content string) (bool, error) {
+	if providerMsgID == "" {
+		return false, nil
+	}
+	tag, err := GetPool().Exec(ctx, `
+		INSERT INTO messages (conversation_id, role, content, provider_msg_id)
+		VALUES ($1, 'user', $2, $3)
+		ON CONFLICT (provider_msg_id) WHERE provider_msg_id IS NOT NULL
+		DO NOTHING
+	`, conversationID, content, providerMsgID)
+	if err != nil {
+		return false, err
+	}
+	return tag.RowsAffected() == 1, nil
+}
+
 func nullBytes(b []byte) any {
 	if len(b) == 0 {
 		return nil
