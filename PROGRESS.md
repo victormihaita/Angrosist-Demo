@@ -3,8 +3,9 @@
 > **This is the file to open to see what's done, what's happening, and what's next.** Updated and committed after every unit of work. The full task list lives in `docs/BUILD_PLAN.md`; this is the running status on top of it.
 
 **Last updated:** 2026-06-21
-**Current milestone:** M2 — Agent core + web widget ✅ (2.1 LLM port + adapters · 2.2 async runtime · 2.3 SSE widget + typing)
-**Next milestone:** M3 — Angrosist LIVE + dashboard (full buyer flow, GCS upload, pipeline/lead-detail/offer tracking, email, handoff). Includes the deferred ANAF→DemoANAF repoint (Epic 1.5).
+**Current milestone:** M3 — Angrosist LIVE + dashboard (in progress)
+**Done:** ANAF→DemoANAF repoint + CAEN→roles ✅ · dashboard scaffold (024/025 + views) ✅ · auth + RBAC + users ✅ · dashboard data API (pipeline/detail/offer/assign/companies/handoffs/kpis, cursor pagination, openapi updated) ✅
+**Next:** frontend dashboard (login + pipeline + lead detail + offer UI + directory + handoff, shadcn) → then Mailer (email) + handoff_to_human tool + GCS FileStore (upload_media).
 **Branches:** `main` = the **Vercel demo** (frozen at pre-today `b5d1b3d`, do not push WIP here). `develop` = **active build** (this is where we work). Push auth fixed (gh active account → `victormihaita`).
 
 ---
@@ -53,6 +54,7 @@ Legend: ✅ done · ⏳ in progress · ⬜ not started
 
 ## Changelog (newest first)
 
+- **2026-06-21** — **M3 backend progress.** (1) ANAF→DemoANAF repoint: richer verified company data + CAEN→roles, company_verifications audit row, `ANAF_PROVIDER` selects demoanaf/anaf/demo. (2) Dashboard scaffold: migrations 024 (users.password_hash) + 025 (leads.offer_value/note) + domain view types. (3) Auth + RBAC: bcrypt + HS256 JWT, login, Require/RequireRole middleware, admin bootstrap from env, admin-only users API. (4) Dashboard data API: secured leads pipeline (cursor pagination + filters), lead detail (transcript + typed request + company/verification + contact), offer tracking + assignment (audited), B2B directory, handoff queue, basic KPIs; openapi.yaml updated + validated. All real-DB tested.
 - **2026-06-21** — **M2 complete.** Epic 2.2: Queue port (local + Cloud Tasks push) + `cmd/worker` endpoint + Postgres per-conversation advisory lock + idempotency by provider message ID (real-DB tested). Epic 2.3: in-process SSE `Broker` port + `GET /api/stream` (typing/message/error, heartbeat) publishing from both sync and async paths; frontend `useChat` consumes SSE with a ~1.5s POST fallback (keeps the Vercel demo working). `/api/chat` response unchanged throughout.
 - **2026-06-21** — **M2 Epic 2.1 done.** Split the coupled Gemini runner into a vendor-neutral `LLM` port + agent core (turn loop, tool registry, state machine, RO prompt) + thin Gemini adapter, then added a **Claude/Anthropic adapter** behind the same port. `LLM_PROVIDER` env swaps providers (gemini default, claude for prod); agent core has zero vendor SDK imports (verified). Unit-tested with mock LLM + the Claude mapping helpers.
 - **2026-06-21** — **M1 cloud-ready (deferred provisioning).** `deploy/terraform/`: 8 modules (Artifact Registry, IAM SAs, Secret Manager, Cloud SQL, GCS, Cloud Run, Cloud Tasks, Cloud Scheduler) composed per env (dev/staging/prod); EU region, least-privilege, no secret values. `.github/workflows/`: CI runs on push; GCP deploy jobs DORMANT (workflow_dispatch + `DEPLOY_ENABLED` guard) via Workload Identity Federation. Dockerfile now builds the worker too. Validated with tofu + actionlint. **M1 buildable scope complete.**
