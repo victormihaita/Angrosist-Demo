@@ -9,8 +9,10 @@ import (
 	"github.com/joho/godotenv"
 
 	"github.com/angrosist/demo/internal/agent"
+	claudellm "github.com/angrosist/demo/internal/agent/llm/claude"
 	geminillm "github.com/angrosist/demo/internal/agent/llm/gemini"
 	pgadapter "github.com/angrosist/demo/internal/persistence/postgres"
+	"github.com/angrosist/demo/internal/ports"
 	"github.com/angrosist/demo/internal/usecases"
 	"github.com/angrosist/demo/internal/verification/anaf"
 )
@@ -48,7 +50,7 @@ func Init() {
 		sourcingRepo := pgadapter.NewSourcingRepo()
 		verifier := anaf.NewClient()
 
-		llm := geminillm.New()
+		llm := newLLM()
 		runner := agent.New(
 			llm,
 			convRepo, msgRepo, companyRepo, contactRepo,
@@ -66,6 +68,19 @@ func Init() {
 func GetContainer() *Container {
 	Init()
 	return container
+}
+
+// newLLM selects the LLM adapter based on the LLM_PROVIDER environment variable.
+// Both adapters satisfy the same ports.LLM seam, so switching providers is a
+// config change with zero impact on the agent core. Gemini is the default so the
+// demo keeps working without an Anthropic key configured.
+func newLLM() ports.LLM {
+	switch os.Getenv("LLM_PROVIDER") {
+	case "claude":
+		return claudellm.New()
+	default:
+		return geminillm.New()
+	}
 }
 
 func findEnvFile() string {
