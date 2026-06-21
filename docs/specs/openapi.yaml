@@ -1,0 +1,1572 @@
+openapi: 3.1.0
+info:
+  title: Euro Intermed B2B Platform API
+  version: 1.0.0
+  description: >
+    REST + real-time API for the Euro Intermed B2B lead-qualification platform
+    (Angrosist + PalletClearance, Phase 1; SkalYou, Phase 2). See the companion
+    human-readable contract in docs/specs/API_CONTRACT.md for conventions, auth,
+    error envelope, pagination, rate limits, validation, and the SSE/WebSocket
+    streaming contract (which is described there rather than fully modeled here).
+    Phase tags appear in operation summaries: [P1], [P1-demo], [P2].
+  contact:
+    name: Euro Intermed Platform
+  license:
+    name: Proprietary
+    identifier: LicenseRef-Proprietary
+
+servers:
+  - url: '{baseUrl}/api'
+    description: >
+      Base URL is environment-provided and never hardcoded. Frontend uses
+      VITE_API_URL (Vite). Production is Cloud Run behind Cloudflare; the demo is
+      a Vercel deployment.
+    variables:
+      baseUrl:
+        default: https://api.example.com
+
+tags:
+  - name: chat
+    description: '[P1] Public chat / agent turns and real-time streaming.'
+  - name: webhooks
+    description: '[P1] WhatsApp Cloud API webhook (verify + signed inbound).'
+  - name: auth
+    description: '[P1] Staff dashboard authentication.'
+  - name: dashboard
+    description: '[P1] Authenticated staff/admin dashboard (RBAC).'
+  - name: gdpr
+    description: '[P1] GDPR erasure.'
+  - name: provider
+    description: '[P2] SkalYou provider portal.'
+  - name: client
+    description: '[P2] SkalYou client magic-link offer page.'
+  - name: system
+    description: Health and infrastructure.
+
+security: []
+
+paths:
+  /health:
+    get:
+      tags: [system]
+      summary: Health check
+      operationId: getHealth
+      security: []
+      responses:
+        '200':
+          description: Service health.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  ok: { type: boolean }
+                  db: { type: boolean }
+                required: [ok]
+
+  /chat:
+    post:
+      tags: [chat]
+      summary: '[P1-demo] Run one agent turn'
+      description: >
+        Run a single channel-agnostic agent turn. If conversation_id is omitted
+        a conversation is created (channel "web") and its id is returned. In
+        production the turn may be enqueued (Cloud Tasks) and the streamed reply
+        delivered over SSE/WS; in the demo it is synchronous.
+      operationId: postChat
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ChatRequest'
+      responses:
+        '200':
+          description: The agent reply, current state, and extracted fields.
+          headers:
+            X-Request-Id: { $ref: '#/components/headers/XRequestId' }
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ChatResponse'
+        '400': { $ref: '#/components/responses/BadRequestLegacy' }
+        '405': { $ref: '#/components/responses/MethodNotAllowedLegacy' }
+        '429': { $ref: '#/components/responses/RateLimited' }
+        '500': { $ref: '#/components/responses/InternalLegacy' }
+
+  /widget/session:
+    post:
+      tags: [chat]
+      summary: '[P1] Bootstrap an embeddable widget session'
+      description: >
+        Issues an ephemeral session so a cross-origin embedded widget can open a
+        stream without staff auth. Returns a stream_url that already encodes the
+        transport and a short-lived session token.
+      operationId: postWidgetSession
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/WidgetSessionRequest'
+      responses:
+        '200':
+          description: Session created.
+          headers:
+            X-Request-Id: { $ref: '#/components/headers/XRequestId' }
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/WidgetSession'
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '429': { $ref: '#/components/responses/RateLimited' }
+
+  /chat/stream:
+    get:
+      tags: [chat]
+      summary: '[P1] SSE reply + typing stream'
+      description: >
+        Server-Sent Events stream for real-time agent replies and the typing
+        indicator. Named events: typing, token, message, state, handoff, error,
+        ping. Reconnect with Last-Event-ID. User messages are posted via
+        POST /api/chat with the same conversation_id. See API_CONTRACT.md section
+        5.3 for the full event contract.
+      operationId: getChatStream
+      security: []
+      parameters:
+        - name: conversation_id
+          in: query
+          required: true
+          schema: { type: string }
+        - name: session
+          in: query
+          required: true
+          description: Short-lived session token from /widget/session.
+          schema: { type: string }
+      responses:
+        '200':
+          description: An open event-stream.
+          content:
+            text/event-stream:
+              schema:
+                type: string
+                description: >
+                  SSE frames, e.g. "event: token\ndata: {\"text\":\"...\"}\n\n".
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+
+  /chat/ws:
+    get:
+      tags: [chat]
+      summary: '[P1] WebSocket reply + typing stream (alternative transport)'
+      description: >
+        WebSocket upgrade endpoint (Cloud Run supports WS). JSON frames mirror
+        the SSE events (type: typing|token|message|state|handoff|error|pong).
+        Modeled descriptively; see API_CONTRACT.md section 5.4.
+      operationId: getChatWs
+      security: []
+      parameters:
+        - name: session
+          in: query
+          required: true
+          schema: { type: string }
+      responses:
+        '101':
+          description: Switching Protocols (WebSocket handshake accepted).
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+
+  /webhooks/whatsapp:
+    get:
+      tags: [webhooks]
+      summary: '[P1] WhatsApp subscription verification handshake'
+      description: >
+        Meta subscription handshake. If hub.verify_token matches the configured
+        secret, echo hub.challenge verbatim as text/plain 200; otherwise 403.
+      operationId: verifyWhatsappWebhook
+      security: []
+      parameters:
+        - name: hub.mode
+          in: query
+          required: true
+          schema: { type: string, enum: [subscribe] }
+        - name: hub.verify_token
+          in: query
+          required: true
+          schema: { type: string }
+        - name: hub.challenge
+          in: query
+          required: true
+          schema: { type: string }
+      responses:
+        '200':
+          description: Challenge echoed verbatim.
+          content:
+            text/plain:
+              schema: { type: string }
+        '403': { $ref: '#/components/responses/Forbidden' }
+    post:
+      tags: [webhooks]
+      summary: '[P1] Signed inbound WhatsApp events (fast-ack)'
+      description: >
+        Inbound WhatsApp webhook. The raw body MUST be verified against the
+        X-Hub-Signature-256 header (HMAC-SHA256 with the app secret) BEFORE
+        parsing; mismatch returns 403. On success the server fast-acks 200
+        immediately, dedupes by provider message id, and enqueues the agent turn
+        (Cloud Tasks). The 200 means "received", not "processed"; retries from
+        Meta are idempotent.
+      operationId: receiveWhatsappWebhook
+      security: []
+      parameters:
+        - name: X-Hub-Signature-256
+          in: header
+          required: true
+          description: 'sha256=<hex hmac of the raw request body>.'
+          schema:
+            type: string
+            pattern: '^sha256=[0-9a-f]{64}$'
+      requestBody:
+        required: true
+        description: Meta WhatsApp webhook payload (messages/statuses). Opaque here.
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: true
+      responses:
+        '200':
+          description: Fast acknowledgement (received, queued for async processing).
+        '403': { $ref: '#/components/responses/Forbidden' }
+
+  /auth/login:
+    post:
+      tags: [auth]
+      summary: '[P1] Staff/admin login'
+      operationId: postLogin
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                email: { type: string, format: email, maxLength: 320 }
+                password: { type: string, minLength: 8, maxLength: 256 }
+              required: [email, password]
+      responses:
+        '200':
+          description: JWT issued.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  token: { type: string }
+                  expires_at: { type: string, format: date-time }
+                  user: { $ref: '#/components/schemas/User' }
+                required: [token, expires_at, user]
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '429': { $ref: '#/components/responses/RateLimited' }
+
+  /auth/refresh:
+    post:
+      tags: [auth]
+      summary: '[P1] Rotate a near-expiry staff JWT'
+      operationId: postRefresh
+      security:
+        - staffJwt: []
+      responses:
+        '200':
+          description: New JWT issued.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  token: { type: string }
+                  expires_at: { type: string, format: date-time }
+                required: [token, expires_at]
+        '401': { $ref: '#/components/responses/Unauthorized' }
+
+  /leads:
+    get:
+      tags: [dashboard]
+      summary: '[P1] List leads (filtered, paginated)'
+      description: >
+        Authenticated lead list with filters and cursor pagination. NOTE: the
+        shipped demo returns a bare LeadSummary[] without auth or paging; this
+        operation documents the Phase-1 target (paginated envelope). The
+        response schema below accepts either shape so the spec matches current
+        and target reality.
+      operationId: listLeads
+      security:
+        - staffJwt: []
+      parameters:
+        - $ref: '#/components/parameters/Limit'
+        - $ref: '#/components/parameters/Cursor'
+        - name: status
+          in: query
+          schema: { $ref: '#/components/schemas/LeadStatus' }
+        - name: vertical
+          in: query
+          schema: { $ref: '#/components/schemas/Vertical' }
+        - name: assigned_to
+          in: query
+          schema: { type: string }
+        - name: country
+          in: query
+          description: ISO 3166-1 alpha-2.
+          schema: { type: string, minLength: 2, maxLength: 2 }
+        - name: market
+          in: query
+          schema: { type: string }
+        - name: search
+          in: query
+          description: Full-text over company / product / summary.
+          schema: { type: string, maxLength: 200 }
+      responses:
+        '200':
+          description: Leads page (envelope) or bare array (demo).
+          headers:
+            X-Request-Id: { $ref: '#/components/headers/XRequestId' }
+            RateLimit-Limit: { $ref: '#/components/headers/RateLimitLimit' }
+            RateLimit-Remaining: { $ref: '#/components/headers/RateLimitRemaining' }
+            RateLimit-Reset: { $ref: '#/components/headers/RateLimitReset' }
+          content:
+            application/json:
+              schema:
+                oneOf:
+                  - $ref: '#/components/schemas/LeadListPage'
+                  - type: array
+                    items: { $ref: '#/components/schemas/LeadSummary' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+
+  /leads/{id}:
+    get:
+      tags: [dashboard]
+      summary: '[P1] Lead detail (transcript + extracted + typed request)'
+      operationId: getLead
+      security:
+        - staffJwt: []
+      parameters:
+        - $ref: '#/components/parameters/LeadId'
+      responses:
+        '200':
+          description: Lead detail.
+          headers:
+            X-Request-Id: { $ref: '#/components/headers/XRequestId' }
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/LeadDetail' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '404': { $ref: '#/components/responses/NotFoundLegacy' }
+
+  /leads/{id}/status:
+    patch:
+      tags: [dashboard]
+      summary: '[P1] Update lead/offer status'
+      description: >
+        Manual offer tracking. status must be a valid transition in the lead
+        state machine; illegal transition returns 409. Writes activity_logs.
+      operationId: updateLeadStatus
+      security:
+        - staffJwt: []
+      parameters:
+        - $ref: '#/components/parameters/LeadId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                status: { $ref: '#/components/schemas/LeadStatus' }
+                value:
+                  type: number
+                  minimum: 0
+                  description: Offer/pipeline value (optional).
+                note: { type: string, maxLength: 2000 }
+              required: [status]
+      responses:
+        '200':
+          description: Updated lead.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/LeadSummary' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '422': { $ref: '#/components/responses/Unprocessable' }
+
+  /leads/{id}/assign:
+    patch:
+      tags: [dashboard]
+      summary: '[P1] Assign / unassign a lead'
+      operationId: assignLead
+      security:
+        - staffJwt: []
+      parameters:
+        - $ref: '#/components/parameters/LeadId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                assigned_to:
+                  type: [string, 'null']
+                  description: User id to assign, or null to unassign.
+              required: [assigned_to]
+      responses:
+        '200':
+          description: Updated lead.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/LeadSummary' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /leads/{id}/activity:
+    get:
+      tags: [dashboard]
+      summary: '[P1] Activity / audit log for a lead'
+      operationId: getLeadActivity
+      security:
+        - staffJwt: []
+      parameters:
+        - $ref: '#/components/parameters/LeadId'
+        - $ref: '#/components/parameters/Limit'
+        - $ref: '#/components/parameters/Cursor'
+      responses:
+        '200':
+          description: Activity log page.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items: { $ref: '#/components/schemas/ActivityLog' }
+                  page: { $ref: '#/components/schemas/PageInfo' }
+                required: [data, page]
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /handoff:
+    get:
+      tags: [dashboard]
+      summary: '[P1] Handoff queue (needs_human leads)'
+      operationId: listHandoff
+      security:
+        - staffJwt: []
+      parameters:
+        - $ref: '#/components/parameters/Limit'
+        - $ref: '#/components/parameters/Cursor'
+        - name: vertical
+          in: query
+          schema: { $ref: '#/components/schemas/Vertical' }
+      responses:
+        '200':
+          description: Handoff queue page.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/LeadListPage' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+
+  /companies:
+    get:
+      tags: [dashboard]
+      summary: '[P1] B2B directory list'
+      operationId: listCompanies
+      security:
+        - staffJwt: []
+      parameters:
+        - $ref: '#/components/parameters/Limit'
+        - $ref: '#/components/parameters/Cursor'
+        - name: roles
+          in: query
+          description: Match companies having any of these roles.
+          style: form
+          explode: true
+          schema:
+            type: array
+            items: { $ref: '#/components/schemas/CompanyRole' }
+        - name: country
+          in: query
+          schema: { type: string, minLength: 2, maxLength: 2 }
+        - name: vat_status
+          in: query
+          schema: { type: string }
+        - name: search
+          in: query
+          schema: { type: string, maxLength: 200 }
+      responses:
+        '200':
+          description: Companies page.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items: { $ref: '#/components/schemas/Company' }
+                  page: { $ref: '#/components/schemas/PageInfo' }
+                required: [data, page]
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+
+  /companies/{id}:
+    get:
+      tags: [dashboard]
+      summary: '[P1] Company detail'
+      operationId: getCompany
+      security:
+        - staffJwt: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        '200':
+          description: Company detail.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/CompanyDetail' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /listings:
+    get:
+      tags: [dashboard]
+      summary: '[P1] Listings inventory (PalletClearance)'
+      operationId: listListings
+      security:
+        - staffJwt: []
+      parameters:
+        - $ref: '#/components/parameters/Limit'
+        - $ref: '#/components/parameters/Cursor'
+        - name: status
+          in: query
+          schema: { type: string }
+        - name: category
+          in: query
+          schema: { type: string }
+        - name: country
+          in: query
+          schema: { type: string, minLength: 2, maxLength: 2 }
+        - name: confidential
+          in: query
+          schema: { type: boolean }
+      responses:
+        '200':
+          description: Listings page.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items: { $ref: '#/components/schemas/Listing' }
+                  page: { $ref: '#/components/schemas/PageInfo' }
+                required: [data, page]
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+
+  /kpis:
+    get:
+      tags: [dashboard]
+      summary: '[P1] Dashboard KPIs'
+      operationId: getKpis
+      security:
+        - staffJwt: []
+      parameters:
+        - name: from
+          in: query
+          schema: { type: string, format: date }
+        - name: to
+          in: query
+          schema: { type: string, format: date }
+      responses:
+        '200':
+          description: KPI aggregates.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Kpis' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+
+  /gdpr/erasure:
+    post:
+      tags: [gdpr]
+      summary: '[P1] Request data erasure'
+      description: >
+        Data-subject erasure intake. At least one identifier (email, phone, or
+        contact_id) is required. Returns 202 with a request id. Once verified,
+        erasure cascades contact -> lead -> conversation -> files.
+      operationId: requestErasure
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                email: { type: string, format: email, maxLength: 320 }
+                phone: { type: string, pattern: '^\+?[0-9 ()-]{6,20}$' }
+                contact_id: { type: string }
+                reason: { type: string, maxLength: 2000 }
+              anyOf:
+                - required: [email]
+                - required: [phone]
+                - required: [contact_id]
+      responses:
+        '202':
+          description: Erasure request accepted.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  request_id: { type: string }
+                  status: { type: string, enum: [received] }
+                required: [request_id, status]
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '422': { $ref: '#/components/responses/Unprocessable' }
+        '429': { $ref: '#/components/responses/RateLimited' }
+
+  /gdpr/erasure/{id}/execute:
+    post:
+      tags: [gdpr]
+      summary: '[P1] Execute a verified erasure request (admin)'
+      operationId: executeErasure
+      security:
+        - staffJwt: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        '200':
+          description: Erasure executed (idempotent).
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  request_id: { type: string }
+                  status: { type: string, enum: [executed] }
+                required: [request_id, status]
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /provider/auth/google:
+    post:
+      tags: [provider]
+      summary: '[P2] Provider login via Google'
+      operationId: providerAuthGoogle
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                id_token: { type: string }
+              required: [id_token]
+      responses:
+        '200':
+          description: Provider JWT issued.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/AuthToken' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+
+  /provider/auth/otp/request:
+    post:
+      tags: [provider]
+      summary: '[P2] Request an email OTP'
+      operationId: providerAuthOtpRequest
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                email: { type: string, format: email, maxLength: 320 }
+              required: [email]
+      responses:
+        '202':
+          description: OTP sent (if the email is eligible).
+        '429': { $ref: '#/components/responses/RateLimited' }
+
+  /provider/auth/otp/verify:
+    post:
+      tags: [provider]
+      summary: '[P2] Verify an email OTP'
+      operationId: providerAuthOtpVerify
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                email: { type: string, format: email, maxLength: 320 }
+                code: { type: string, pattern: '^[0-9]{4,8}$' }
+              required: [email, code]
+      responses:
+        '200':
+          description: Provider JWT issued.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/AuthToken' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '429': { $ref: '#/components/responses/RateLimited' }
+
+  /provider/onboarding:
+    post:
+      tags: [provider]
+      summary: '[P2] Provider onboarding profile'
+      operationId: providerOnboarding
+      security:
+        - providerJwt: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                categories:
+                  type: array
+                  items: { type: string }
+                roles:
+                  type: array
+                  items: { $ref: '#/components/schemas/CompanyRole' }
+                markets:
+                  type: array
+                  items: { type: string, minLength: 2, maxLength: 2 }
+                plan: { type: string, enum: [starter, pro, vip] }
+                consent_to_leads:
+                  type: boolean
+                  const: true
+                  description: Must be true to receive leads.
+              required: [categories, roles, markets, consent_to_leads]
+      responses:
+        '200':
+          description: Profile saved.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Provider' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+
+  /provider/leads:
+    get:
+      tags: [provider]
+      summary: '[P2] Provider routed leads (clickwrap-gated)'
+      description: >
+        Returns leads routed to the authenticated provider only. Full client
+        data is gated by clickwrap acceptance; until accepted, only a redacted
+        teaser is returned per lead.
+      operationId: providerLeads
+      security:
+        - providerJwt: []
+      parameters:
+        - $ref: '#/components/parameters/Limit'
+        - $ref: '#/components/parameters/Cursor'
+      responses:
+        '200':
+          description: Provider leads page (redacted until clickwrap).
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items: { $ref: '#/components/schemas/ProviderLead' }
+                  page: { $ref: '#/components/schemas/PageInfo' }
+                required: [data, page]
+        '401': { $ref: '#/components/responses/Unauthorized' }
+
+  /provider/matches/{id}/accept:
+    post:
+      tags: [provider]
+      summary: '[P2] Accept a routed match'
+      operationId: providerAcceptMatch
+      security:
+        - providerJwt: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        '200':
+          description: Match accepted (acceptance + timestamp logged).
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Match' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+
+  /provider/matches/{id}/decline:
+    post:
+      tags: [provider]
+      summary: '[P2] Decline a routed match'
+      operationId: providerDeclineMatch
+      security:
+        - providerJwt: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        '200':
+          description: Match declined; routing advances to the next provider.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Match' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+
+  /provider/leads/{id}/clickwrap:
+    post:
+      tags: [provider]
+      summary: '[P2] Accept clickwrap before client-data disclosure'
+      description: >
+        Records commercial-terms acceptance (terms_version, ip, timestamp,
+        user_id are stamped server-side, never taken from the client) and
+        returns the full client data. 410 if the disclosure window expired.
+      operationId: providerClickwrap
+      security:
+        - providerJwt: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                accepted:
+                  type: boolean
+                  const: true
+              required: [accepted]
+      responses:
+        '200':
+          description: Clickwrap recorded; full client data returned.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ProviderLead' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '410': { $ref: '#/components/responses/Gone' }
+
+  /provider/offers:
+    post:
+      tags: [provider]
+      summary: '[P2] Upload an offer'
+      description: >
+        Upload an offer document for an accepted lead/request. The document is
+        stored in GCS (multipart here; a pre-signed-URL flow is also acceptable).
+      operationId: providerUploadOffer
+      security:
+        - providerJwt: []
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              properties:
+                lead_id: { type: string }
+                request_id: { type: string }
+                value: { type: number, minimum: 0 }
+                file:
+                  type: string
+                  format: binary
+              required: [value, file]
+      responses:
+        '201':
+          description: Offer created.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Offer' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+
+  /client/session:
+    post:
+      tags: [client]
+      summary: '[P2] Exchange a magic-link token for a client session'
+      description: >
+        Exchanges the single-use, expiring magic-link token for a short-lived
+        client JWT. The exchange is access-logged. Expired/used token returns 410.
+      operationId: clientSession
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                token: { type: string }
+              required: [token]
+      responses:
+        '200':
+          description: Client session JWT issued.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/AuthToken' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '410': { $ref: '#/components/responses/Gone' }
+
+  /client/offer:
+    get:
+      tags: [client]
+      summary: '[P2] View the offer'
+      operationId: clientGetOffer
+      security:
+        - clientJwt: []
+      responses:
+        '200':
+          description: Offer view (access logged).
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Offer' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '410': { $ref: '#/components/responses/Gone' }
+
+  /client/offer/accept:
+    post:
+      tags: [client]
+      summary: '[P2] Accept the offer'
+      operationId: clientAcceptOffer
+      security:
+        - clientJwt: []
+      responses:
+        '200':
+          description: Offer accepted (client_action_at stamped).
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Offer' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '410': { $ref: '#/components/responses/Gone' }
+
+  /client/offer/clarifications:
+    post:
+      tags: [client]
+      summary: '[P2] Request clarifications on the offer'
+      operationId: clientRequestClarifications
+      security:
+        - clientJwt: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                message: { type: string, minLength: 1, maxLength: 2000 }
+              required: [message]
+      responses:
+        '200':
+          description: Clarification recorded; offer status -> clarification_requested.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Offer' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '410': { $ref: '#/components/responses/Gone' }
+
+components:
+  securitySchemes:
+    staffJwt:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: 'Staff/admin session JWT (claims: sub, role, exp).'
+    providerJwt:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: '[P2] Provider JWT from Google or email OTP (scoped to provider_id).'
+    clientJwt:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: '[P2] Short-lived client JWT exchanged from a magic-link token.'
+
+  headers:
+    XRequestId:
+      description: Correlation id, echoed or server-generated.
+      schema: { type: string }
+    RateLimitLimit:
+      description: Requests allowed in the current window.
+      schema: { type: integer }
+    RateLimitRemaining:
+      description: Requests remaining in the current window.
+      schema: { type: integer }
+    RateLimitReset:
+      description: Seconds until the window resets.
+      schema: { type: integer }
+    RetryAfter:
+      description: Seconds to wait before retrying (on 429).
+      schema: { type: integer }
+
+  parameters:
+    Limit:
+      name: limit
+      in: query
+      description: Page size (default 25, max 100; out-of-range is clamped).
+      schema:
+        type: integer
+        minimum: 1
+        maximum: 100
+        default: 25
+    Cursor:
+      name: cursor
+      in: query
+      description: Opaque cursor from the previous page's next_cursor.
+      schema: { type: string }
+    LeadId:
+      name: id
+      in: path
+      required: true
+      description: Lead id.
+      schema:
+        type: string
+        minLength: 1
+
+  responses:
+    BadRequest:
+      description: Validation failure / malformed request.
+      headers:
+        X-Request-Id: { $ref: '#/components/headers/XRequestId' }
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/ErrorEnvelope' }
+    Unauthorized:
+      description: Missing/invalid/expired credentials.
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/ErrorEnvelope' }
+    Forbidden:
+      description: Authenticated but not allowed (role/ownership/signature).
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/ErrorEnvelope' }
+    NotFound:
+      description: Resource not found.
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/ErrorEnvelope' }
+    Conflict:
+      description: Invalid state transition.
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/ErrorEnvelope' }
+    Gone:
+      description: Expired or already-used (magic link / clickwrap window).
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/ErrorEnvelope' }
+    Unprocessable:
+      description: Semantically invalid (e.g. unknown enum value).
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/ErrorEnvelope' }
+    RateLimited:
+      description: Too many requests.
+      headers:
+        RateLimit-Limit: { $ref: '#/components/headers/RateLimitLimit' }
+        RateLimit-Remaining: { $ref: '#/components/headers/RateLimitRemaining' }
+        RateLimit-Reset: { $ref: '#/components/headers/RateLimitReset' }
+        Retry-After: { $ref: '#/components/headers/RetryAfter' }
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/ErrorEnvelope' }
+    BadRequestLegacy:
+      description: >
+        Validation failure. NOTE: the shipped demo handler emits the legacy
+        shape {"error":"<string>"}; the target is the structured envelope.
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/LegacyError' }
+    MethodNotAllowedLegacy:
+      description: Wrong HTTP method (legacy error shape on demo handlers).
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/LegacyError' }
+    NotFoundLegacy:
+      description: Not found (legacy error shape on demo handlers).
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/LegacyError' }
+    InternalLegacy:
+      description: Internal error (legacy error shape on demo handlers).
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/LegacyError' }
+
+  schemas:
+    ErrorEnvelope:
+      type: object
+      properties:
+        error:
+          type: object
+          properties:
+            code:
+              type: string
+              description: Stable machine-readable code (SCREAMING_SNAKE_CASE).
+              examples: [VALIDATION_FAILED, UNAUTHENTICATED, FORBIDDEN, NOT_FOUND, CONFLICT, EXPIRED, UNPROCESSABLE, RATE_LIMITED, INTERNAL, UPSTREAM_UNAVAILABLE]
+            message:
+              type: string
+              description: Human-readable, safe to surface.
+            details:
+              type: array
+              items:
+                type: object
+                properties:
+                  field: { type: string }
+                  issue: { type: string }
+                required: [field, issue]
+            request_id: { type: string }
+          required: [code, message]
+      required: [error]
+
+    LegacyError:
+      type: object
+      description: Legacy demo error shape (already shipped). New code uses ErrorEnvelope.
+      properties:
+        error: { type: string }
+      required: [error]
+
+    PageInfo:
+      type: object
+      properties:
+        next_cursor:
+          type: [string, 'null']
+          description: Cursor for the next page; null when no more pages.
+        limit: { type: integer }
+        count: { type: integer }
+      required: [limit, count]
+
+    ChatRequest:
+      type: object
+      properties:
+        conversation_id:
+          type: string
+          description: Omit to start a new conversation.
+        message:
+          type: string
+          minLength: 1
+          maxLength: 4000
+      required: [message]
+
+    ChatResponse:
+      type: object
+      properties:
+        conversation_id: { type: string }
+        reply: { type: string }
+        state: { $ref: '#/components/schemas/ConversationState' }
+        extracted:
+          type: object
+          additionalProperties: true
+          description: Extracted fields (e.g. product_name, quantity, unit, delivery_location, cui, company_name, phone, email).
+      required: [conversation_id, reply, state, extracted]
+
+    ConversationState:
+      type: string
+      enum: [greeting, qualifying, verifying, confirmed, failed]
+
+    WidgetSessionRequest:
+      type: object
+      properties:
+        vertical: { $ref: '#/components/schemas/Vertical' }
+        locale: { type: string, enum: [ro, en] }
+        origin:
+          type: string
+          format: uri
+          description: Embedding page origin (recorded for abuse tracing).
+      required: [origin]
+
+    WidgetSession:
+      type: object
+      properties:
+        session_id: { type: string }
+        conversation_id: { type: string }
+        stream_url:
+          type: string
+          description: SSE or WS URL with an embedded short-lived session token.
+        expires_at: { type: string, format: date-time }
+      required: [session_id, conversation_id, stream_url, expires_at]
+
+    Vertical:
+      type: string
+      description: Extensible enum; validate against the live set.
+      enum: [angrosist, palletclearance, skalyou]
+
+    Intent:
+      type: string
+      description: Extensible enum.
+      enum: [buy, sell, market_entry]
+
+    LeadStatus:
+      type: string
+      description: Extensible lead/offer state machine.
+      enum:
+        - new
+        - qualifying
+        - needs_human
+        - qualified
+        - offer_requested
+        - offer_sent
+        - negotiation
+        - won
+        - lost
+
+    CompanyRole:
+      type: string
+      enum:
+        - distributor
+        - importer
+        - wholesaler
+        - retailer
+        - horeca
+        - processor
+        - producer
+        - buyer
+        - seller
+
+    LeadSummary:
+      type: object
+      description: List-view projection (mirrors domain.LeadSummary).
+      properties:
+        id: { type: string }
+        status: { type: string }
+        company_name: { type: string }
+        cui: { type: string }
+        product_name: { type: string }
+        quantity:
+          type: [number, 'null']
+        unit: { type: string }
+        delivery_location: { type: string }
+        created_at: { type: string, format: date-time }
+      required: [id, status, company_name, cui, product_name, quantity, unit, delivery_location, created_at]
+
+    LeadListPage:
+      type: object
+      properties:
+        data:
+          type: array
+          items: { $ref: '#/components/schemas/LeadSummary' }
+        page: { $ref: '#/components/schemas/PageInfo' }
+      required: [data, page]
+
+    TranscriptMessage:
+      type: object
+      properties:
+        id: { type: string }
+        conversation_id: { type: string }
+        role: { type: string, examples: [user, assistant, tool] }
+        content: { type: string }
+        tool_calls:
+          type: string
+          description: Base64-encoded JSON array of tool-call parts.
+        tool_call_id: { type: string }
+        created_at: { type: string, format: date-time }
+      required: [id, role, content, created_at]
+
+    LeadDetail:
+      allOf:
+        - $ref: '#/components/schemas/LeadSummary'
+        - type: object
+          properties:
+            address: { type: string }
+            county: { type: string }
+            phone: { type: string }
+            email: { type: string }
+            vertical: { $ref: '#/components/schemas/Vertical' }
+            intent: { $ref: '#/components/schemas/Intent' }
+            summary: { type: string }
+            needs_human: { type: boolean }
+            bot_active: { type: boolean }
+            assigned_to: { type: [string, 'null'] }
+            transcript:
+              type: array
+              items: { $ref: '#/components/schemas/TranscriptMessage' }
+            sourcing_request:
+              anyOf:
+                - $ref: '#/components/schemas/SourcingRequest'
+                - type: 'null'
+            listing:
+              anyOf:
+                - $ref: '#/components/schemas/Listing'
+                - type: 'null'
+            market_entry_request:
+              anyOf:
+                - $ref: '#/components/schemas/MarketEntryRequest'
+                - type: 'null'
+          required: [address, county, phone, email, transcript]
+
+    SourcingRequest:
+      type: object
+      description: Angrosist buyer demand (DATA_MODEL sourcing_requests).
+      properties:
+        lead_id: { type: string }
+        category_id: { type: [string, 'null'] }
+        product: { type: string }
+        quantity: { type: [number, 'null'] }
+        delivery_location: { type: string }
+        recurring: { type: boolean }
+        deadline: { type: [string, 'null'], format: date }
+        budget: { type: [number, 'null'] }
+      required: [lead_id, product]
+
+    Listing:
+      type: object
+      description: PalletClearance supply (DATA_MODEL listings).
+      properties:
+        id: { type: string }
+        lead_id: { type: string }
+        company_id: { type: string }
+        category_id: { type: [string, 'null'] }
+        stock_type: { type: string }
+        quantity: { type: [number, 'null'] }
+        location: { type: string }
+        country: { type: string }
+        expiry: { type: [string, 'null'], format: date }
+        target_price: { type: [number, 'null'] }
+        confidential: { type: boolean }
+        status: { type: string }
+      required: [id, lead_id, status]
+
+    MarketEntryRequest:
+      type: object
+      description: '[P2] SkalYou market-entry request (DATA_MODEL market_entry_requests).'
+      properties:
+        lead_id: { type: string }
+        company_id: { type: string }
+        category_id: { type: [string, 'null'] }
+        partner_types:
+          type: array
+          items: { $ref: '#/components/schemas/CompanyRole' }
+        has_permanent_stock: { type: boolean }
+        active_markets:
+          type: array
+          items: { type: string, minLength: 2, maxLength: 2 }
+        target_market: { type: string }
+        website: { type: [string, 'null'], format: uri }
+        objective: { type: string }
+        specialist_type: { type: [string, 'null'] }
+      required: [lead_id]
+
+    Company:
+      type: object
+      properties:
+        id: { type: string }
+        country: { type: string, minLength: 2, maxLength: 2 }
+        reg_no: { type: string, description: 'CUI for RO.' }
+        name: { type: string }
+        vat_status: { type: [string, 'null'] }
+        caen: { type: [string, 'null'] }
+        address: { type: [string, 'null'] }
+        roles:
+          type: array
+          items: { $ref: '#/components/schemas/CompanyRole' }
+        created_at: { type: string, format: date-time }
+      required: [id, country, reg_no, name]
+
+    CompanyDetail:
+      allOf:
+        - $ref: '#/components/schemas/Company'
+        - type: object
+          properties:
+            verification:
+              anyOf:
+                - type: object
+                  properties:
+                    source: { type: string, examples: [demoanaf] }
+                    vat_status: { type: [string, 'null'] }
+                    administrators:
+                      type: array
+                      items: { type: string }
+                    checked_at: { type: string, format: date-time }
+                - type: 'null'
+            financials:
+              type: array
+              items:
+                type: object
+                properties:
+                  year: { type: integer }
+                  turnover: { type: [number, 'null'] }
+            contacts:
+              type: array
+              items: { $ref: '#/components/schemas/Contact' }
+            leads:
+              type: array
+              items: { $ref: '#/components/schemas/LeadSummary' }
+
+    Contact:
+      type: object
+      properties:
+        id: { type: string }
+        company_id: { type: string }
+        name: { type: string }
+        phone: { type: string }
+        email: { type: string }
+        language: { type: string, enum: [ro, en] }
+      required: [id]
+
+    ActivityLog:
+      type: object
+      properties:
+        id: { type: string }
+        actor_type: { type: string, enum: [agent, staff, provider, system] }
+        actor_id: { type: [string, 'null'] }
+        action: { type: string }
+        entity_type: { type: string }
+        entity_id: { type: string }
+        meta:
+          type: object
+          additionalProperties: true
+        at: { type: string, format: date-time }
+      required: [id, actor_type, action, at]
+
+    Kpis:
+      type: object
+      properties:
+        offers_sent: { type: integer }
+        conversion_rate: { type: number }
+        pipeline_value: { type: number }
+        by_status:
+          type: object
+          additionalProperties: { type: integer }
+        by_vertical:
+          type: object
+          additionalProperties: { type: integer }
+      required: [offers_sent, conversion_rate, pipeline_value]
+
+    User:
+      type: object
+      properties:
+        id: { type: string }
+        email: { type: string, format: email }
+        name: { type: string }
+        role: { type: string, enum: [staff, admin] }
+      required: [id, email, role]
+
+    AuthToken:
+      type: object
+      properties:
+        token: { type: string }
+        expires_at: { type: string, format: date-time }
+      required: [token, expires_at]
+
+    Provider:
+      type: object
+      description: '[P2] SkalYou expert/provider.'
+      properties:
+        id: { type: string }
+        company_id: { type: [string, 'null'] }
+        categories:
+          type: array
+          items: { type: string }
+        roles:
+          type: array
+          items: { $ref: '#/components/schemas/CompanyRole' }
+        markets:
+          type: array
+          items: { type: string, minLength: 2, maxLength: 2 }
+        plan: { type: string, enum: [starter, pro, vip] }
+        consent_to_leads: { type: boolean }
+      required: [id, consent_to_leads]
+
+    ProviderLead:
+      type: object
+      description: >
+        [P2] A lead routed to a provider. When clickwrap_accepted is false only
+        a redacted teaser is populated; full client data appears after clickwrap.
+      properties:
+        match_id: { type: string }
+        lead_id: { type: string }
+        clickwrap_accepted: { type: boolean }
+        teaser:
+          type: object
+          properties:
+            vertical: { $ref: '#/components/schemas/Vertical' }
+            category: { type: [string, 'null'] }
+            market: { type: [string, 'null'] }
+            summary: { type: string }
+        client:
+          anyOf:
+            - $ref: '#/components/schemas/LeadDetail'
+            - type: 'null'
+      required: [match_id, lead_id, clickwrap_accepted]
+
+    Match:
+      type: object
+      description: '[P2] Provider-lead match.'
+      properties:
+        id: { type: string }
+        request_id: { type: string }
+        provider_id: { type: string }
+        rank: { type: integer }
+        status: { type: string, enum: [routed, accepted, declined, expired] }
+        attempt_no: { type: integer }
+        routed_at: { type: [string, 'null'], format: date-time }
+        responded_at: { type: [string, 'null'], format: date-time }
+      required: [id, status]
+
+    Offer:
+      type: object
+      description: '[P2] Offer uploaded by a provider, viewed by the client.'
+      properties:
+        id: { type: string }
+        lead_id: { type: [string, 'null'] }
+        request_id: { type: [string, 'null'] }
+        provider_id: { type: string }
+        document_id: { type: [string, 'null'] }
+        value: { type: [number, 'null'] }
+        status:
+          type: string
+          enum: [uploaded, delivered, accepted, clarification_requested]
+        delivered_at: { type: [string, 'null'], format: date-time }
+        client_action_at: { type: [string, 'null'], format: date-time }
+      required: [id, status]

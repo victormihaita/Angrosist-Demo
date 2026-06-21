@@ -1,0 +1,41 @@
+# golangci-lint configuration for the Go backend.
+# Run from backend/:  golangci-lint run
+run:
+  timeout: 5m
+  tests: true
+
+linters:
+  enable:
+    - errcheck      # unchecked errors
+    - govet         # suspicious constructs
+    - staticcheck   # bug-prone code
+    - ineffassign   # ineffective assignments
+    - unused        # unused code
+    - gosimple      # simplifications
+    - gosec         # security issues (hardcoded creds, SQL, etc.)
+    - bodyclose     # unclosed HTTP response bodies
+    - sqlclosecheck # unclosed rows/stmts
+    - errorlint     # correct error wrapping (%w)
+    - misspell
+    - revive        # style
+
+linters-settings:
+  errcheck:
+    check-type-assertions: true
+  gosec:
+    excludes:
+      - G104  # handled by errcheck
+  revive:
+    rules:
+      - name: error-strings
+      - name: error-return
+      - name: context-as-argument
+
+issues:
+  exclude-rules:
+    # Allow long lines and unchecked errors in generated/test fixtures if needed.
+    - path: _test\.go
+      linters:
+        - gosec
+  max-issues-per-linter: 0
+  max-same-issues: 0
