@@ -21,6 +21,8 @@ The full specification is split across companion docs (read in order when needed
 - `docs/specs/SECURITY.md` — threat model, RBAC, secrets, GDPR procedures, audit catalog
 - `docs/specs/AI_AGENT_SPEC.md` — agent design, versioned prompt library, tool schemas, guardrails
 - `docs/specs/UIUX_GUIDE.md` — shadcn component inventory per screen
+- `docs/specs/ANAF_API.md` — company-verification provider audit (DemoANAF endpoints, tiers, field map, decision)
+- `docs/USER_JOURNEYS.md` — per-actor walkthrough of the final platform
 - `backend/CLAUDE.md`, `frontend/CLAUDE.md` — layer-specific conventions
 - `CONTRIBUTING.md` — workflow, branch/PR/test conventions, the modular-swap recipe
 

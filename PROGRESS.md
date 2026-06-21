@@ -3,9 +3,9 @@
 > **This is the file to open to see what's done, what's happening, and what's next.** Updated and committed after every unit of work. The full task list lives in `docs/BUILD_PLAN.md`; this is the running status on top of it.
 
 **Last updated:** 2026-06-21
-**Current milestone:** M0.5 — Demo hardening
-**Current task:** _starting H1 (secrets & config hygiene)_
-**Branch:** `main` · **Origin:** in sync after each push
+**Current milestone:** M0.5 — Demo hardening (paused mid-way for an ANAF audit)
+**Current task:** _resuming M0.5 H1/H2 (config + CORS + validation)_
+**Branch:** `main` · ⚠️ **Origin: local is AHEAD — `git push` blocked by a credentials mismatch** (`victor-mihaita` vs repo owner `victormihaita`). Fix auth to sync GitHub; all work is committed locally.
 
 ---
 
@@ -53,6 +53,7 @@ Legend: ✅ done · ⏳ in progress · ⬜ not started
 
 ## Changelog (newest first)
 
+- **2026-06-21** — Audited the company-verification provider → `docs/specs/ANAF_API.md`. Decision: use DemoANAF **free** REST API (richer than the raw ANAF service the demo currently calls); endpoints `/company/:cui` (+ optional `/financials`, `/caen`, `/search`); free tier is enough; flagged a demo/adapter discrepancy + missing commercial terms. Threaded tasks into BUILD_PLAN M1 Epic 1.5.
 - **2026-06-21** — Added `docs/USER_JOURNEYS.md` (all actor journeys) + this tracker. Starting M0.5.
 - **2026-06-21** — Merged Claude OS + planning suite to `main` (hard rules, BUILD_PLAN, 6 specs, 7 agents, 6 commands, MCP, hooks).
 - **2026-06-21** — Wired Context7 + shadcn MCP (key in git-ignored local settings).

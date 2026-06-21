@@ -80,8 +80,14 @@
 - **DoD:** migrations apply clean on an empty DB; indexes present; invariants enforced by constraints.
 
 ### Epic 1.5 — DemoANAF adapter + B2B directory write path
-- [ ] `CompanyDataProvider` adapter for DemoANAF `/api/company/:cui` (+ optional `/financials`); cache + persist to `companies`/`company_verifications`/`company_financials`. Tag `companies.roles[]` opportunistically.
-- **DoD:** a real CUI verify persists a company + verification row; financials optional/nullable.
+> Provider audit + decision: `docs/specs/ANAF_API.md`. Use the DemoANAF **free** REST API (keyless, 300 req/min) — richer than the raw ANAF service the demo currently calls.
+- [ ] **Repoint the adapter** from the raw ANAF web service (`webservicesp.anaf.ro`, VAT-only) to `https://demoanaf.ro/api/company/:cui`; map the rich response (ONRC reg, administrators, CAEN list, VAT status) into `companies` + `company_verifications`. Base URLs in env.
+- [ ] Derive `companies.roles[]` from `caenCode` + `authorizedCaenCodes[]` via a **CAEN→roles/categories mapping table** (seeds the B2B directory + P2 matching).
+- [ ] Optional `/company/:cui/financials` enrichment behind a config flag → `company_financials` (turnover, employees; used for lead scoring).
+- [ ] Keep a **raw-ANAF fallback adapter** behind the same `CompanyDataProvider` port (DemoANAF has no published SLA).
+- [ ] Cache + persist verification results; repeat CUIs hit cache, not the API.
+- **DoD:** a real CUI verify persists a company + verification row with administrators + CAEN-derived roles; financials optional/nullable; provider swappable via the port.
+- **Pre-handover:** confirm DemoANAF commercial-use terms / SLA; decide Free vs Pro/MCP; document the fallback. (See ANAF_API.md action items.)
 
 ### Epic 1.6 — Kick off Meta Business verification ⏳
 - [ ] Start Meta Business verification (long-pole; runs in parallel through M4). Track status weekly.
