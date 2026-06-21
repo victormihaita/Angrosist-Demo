@@ -5,19 +5,11 @@ import (
 	"net/http"
 	"os"
 
-	chathandler   "github.com/angrosist/demo/api/chat"
+	chathandler "github.com/angrosist/demo/api/chat"
 	healthhandler "github.com/angrosist/demo/api/health"
-	leadshandler  "github.com/angrosist/demo/api/leads"
+	leadshandler "github.com/angrosist/demo/api/leads"
 	detailhandler "github.com/angrosist/demo/api/leads/detail"
-	httputil      "github.com/angrosist/demo/pkg/adapters/http"
 )
-
-func cors(next http.HandlerFunc) http.HandlerFunc {
-	return func(w http.ResponseWriter, r *http.Request) {
-		httputil.HandleOptions(w, r)
-		next(w, r)
-	}
-}
 
 func main() {
 	mux := http.NewServeMux()

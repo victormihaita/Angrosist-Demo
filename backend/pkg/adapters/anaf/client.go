@@ -25,6 +25,7 @@ const defaultBaseURL = "https://webservicesp.anaf.ro/api/PlatitorTvaRest/v9/tva"
 type Client struct {
 	baseURL    string
 	httpClient *http.Client
+	demoMode   bool
 }
 
 func NewClient() *Client {
@@ -35,18 +36,37 @@ func NewClient() *Client {
 	return &Client{
 		baseURL:    baseURL,
 		httpClient: &http.Client{Timeout: 10 * time.Second},
+		demoMode:   strings.EqualFold(strings.TrimSpace(os.Getenv("ANAF_DEMO_MODE")), "true"),
 	}
 }
 
 // Verify looks up a CUI in ANAF and returns a populated Company.
 // Non-numeric or non-positive CUI returns ErrNotFound (not an error worth retrying).
 // Network failures / non-2xx return ErrUnavailable — caller surfaces this to the agent.
+// When demo mode is on (ANAF_DEMO_MODE=true), it returns deterministic demo data
+// without any network call — used to run the demo without the external dependency.
 func (c *Client) Verify(ctx context.Context, cui string) (*domain.Company, error) {
 	cuiInt, ok := parseCUI(cui)
 	if !ok {
 		return nil, ErrNotFound
 	}
+	if c.demoMode {
+		return demoCompany(cuiInt), nil
+	}
 	return c.callANAF(ctx, cuiInt)
+}
+
+// demoCompany returns a deterministic placeholder company for demo mode.
+func demoCompany(cui int) *domain.Company {
+	raw, _ := json.Marshal(map[string]any{"demo": true, "cui": cui})
+	return &domain.Company{
+		CUI:      fmt.Sprintf("%d", cui),
+		Name:     "Demo Company SRL",
+		Address:  "Str. Exemplu, Nr. 1",
+		County:   "București",
+		IsActive: true,
+		RawData:  raw,
+	}
 }
 
 // ---- ANAF v9 types --------------------------------------------------------
