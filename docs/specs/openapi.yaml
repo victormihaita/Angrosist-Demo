@@ -406,10 +406,51 @@ paths:
         '409': { $ref: '#/components/responses/Conflict' }
         '422': { $ref: '#/components/responses/Unprocessable' }
 
-  /leads/{id}/assign:
+  /leads/{id}/offer:
     patch:
       tags: [dashboard]
+      summary: '[P1] Update manual offer tracking (alias of /leads/{id}/status)'
+      description: >
+        Manual offer tracking. Sets leads.status / offer_value / offer_note and
+        writes an offer.update activity_logs row. status is validated against the
+        lead_statuses lookup; value must be >= 0; note <= 2000 chars. At least one
+        of status/value/note is required. Same handler as PATCH /leads/{id}/status.
+      operationId: updateLeadOffer
+      security:
+        - staffJwt: []
+      parameters:
+        - $ref: '#/components/parameters/LeadId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                status: { $ref: '#/components/schemas/LeadStatus' }
+                value:
+                  type: number
+                  minimum: 0
+                  description: Offer/pipeline value (optional).
+                note: { type: string, maxLength: 2000 }
+      responses:
+        '200':
+          description: Updated lead.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/LeadSummary' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /leads/{id}/assign:
+    post:
+      tags: [dashboard]
       summary: '[P1] Assign / unassign a lead'
+      description: >
+        Sets leads.assigned_to (user_id, or null to unassign) and writes a
+        lead.assign activity_logs row. The target user must exist when non-null.
       operationId: assignLead
       security:
         - staffJwt: []
@@ -422,10 +463,10 @@ paths:
             schema:
               type: object
               properties:
-                assigned_to:
+                user_id:
                   type: [string, 'null']
                   description: User id to assign, or null to unassign.
-              required: [assigned_to]
+              required: [user_id]
       responses:
         '200':
           description: Updated lead.
@@ -464,25 +505,32 @@ paths:
         '401': { $ref: '#/components/responses/Unauthorized' }
         '404': { $ref: '#/components/responses/NotFound' }
 
-  /handoff:
+  /handoffs:
     get:
       tags: [dashboard]
       summary: '[P1] Handoff queue (needs_human leads)'
-      operationId: listHandoff
+      description: >
+        Leads with needs_human=true, newest first, each carrying a short snippet
+        of the conversation's last message. Also reachable at /handoff (alias).
+      operationId: listHandoffs
       security:
         - staffJwt: []
       parameters:
         - $ref: '#/components/parameters/Limit'
         - $ref: '#/components/parameters/Cursor'
-        - name: vertical
-          in: query
-          schema: { $ref: '#/components/schemas/Vertical' }
       responses:
         '200':
           description: Handoff queue page.
           content:
             application/json:
-              schema: { $ref: '#/components/schemas/LeadListPage' }
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items: { $ref: '#/components/schemas/HandoffItem' }
+                  page: { $ref: '#/components/schemas/PageInfo' }
+                required: [data, page]
         '401': { $ref: '#/components/responses/Unauthorized' }
         '403': { $ref: '#/components/responses/Forbidden' }
 
@@ -1288,7 +1336,12 @@ components:
         unit: { type: string }
         delivery_location: { type: string }
         created_at: { type: string, format: date-time }
-      required: [id, status, company_name, cui, product_name, quantity, unit, delivery_location, created_at]
+        vertical: { type: string }
+        assigned_to: { type: [string, 'null'] }
+        needs_human: { type: boolean }
+        offer_value: { type: [number, 'null'] }
+        offer_note: { type: string }
+      required: [id, status, company_name, cui, product_name, quantity, unit, delivery_location, created_at, vertical, assigned_to, needs_human, offer_value]
 
     LeadListPage:
       type: object
@@ -1298,6 +1351,20 @@ components:
           items: { $ref: '#/components/schemas/LeadSummary' }
         page: { $ref: '#/components/schemas/PageInfo' }
       required: [data, page]
+
+    HandoffItem:
+      type: object
+      description: One entry in the human-handoff queue (mirrors domain.HandoffItem).
+      properties:
+        id: { type: string }
+        status: { type: string }
+        vertical: { type: string }
+        company_name: { type: string }
+        product_name: { type: string }
+        assigned_to: { type: [string, 'null'] }
+        last_message: { type: string }
+        created_at: { type: string, format: date-time }
+      required: [id, status, vertical, company_name, product_name, assigned_to, last_message, created_at]
 
     TranscriptMessage:
       type: object
@@ -1471,17 +1538,19 @@ components:
 
     Kpis:
       type: object
+      description: >
+        Dashboard aggregates (mirrors domain.KPIs). offers_sent = leads in
+        offer_sent|negotiation|won; won = leads in won; qualified = leads at
+        qualification or beyond (the conversion denominator); conversion_rate =
+        won/qualified (0 when qualified=0); pipeline_value = sum(offer_value) over
+        open (non-terminal) statuses.
       properties:
         offers_sent: { type: integer }
+        won: { type: integer }
+        qualified: { type: integer }
         conversion_rate: { type: number }
         pipeline_value: { type: number }
-        by_status:
-          type: object
-          additionalProperties: { type: integer }
-        by_vertical:
-          type: object
-          additionalProperties: { type: integer }
-      required: [offers_sent, conversion_rate, pipeline_value]
+      required: [offers_sent, won, qualified, conversion_rate, pipeline_value]
 
     User:
       type: object

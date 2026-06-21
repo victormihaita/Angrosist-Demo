@@ -15,6 +15,7 @@ import (
 	claudellm "github.com/angrosist/demo/internal/agent/llm/claude"
 	geminillm "github.com/angrosist/demo/internal/agent/llm/gemini"
 	"github.com/angrosist/demo/internal/api/authhttp"
+	"github.com/angrosist/demo/internal/api/dashboardhttp"
 	"github.com/angrosist/demo/internal/auth"
 	"github.com/angrosist/demo/internal/broker"
 	"github.com/angrosist/demo/internal/domain"
@@ -56,6 +57,11 @@ type Container struct {
 	// Auth is the staff/admin authentication + RBAC HTTP service: login handler,
 	// admin user-management handlers, and the bearer-token / role middleware.
 	Auth *authhttp.Service
+
+	// Dashboard is the authenticated dashboard data HTTP service (leads pipeline,
+	// lead detail, offer tracking, assignment, B2B directory, handoff queue, KPIs).
+	// Its routes are mounted behind Auth.Auth.Require in cmd/server.
+	Dashboard *dashboardhttp.Service
 }
 
 var (
@@ -76,6 +82,7 @@ func Init() {
 		leadRepo := pgadapter.NewLeadRepo()
 		sourcingRepo := pgadapter.NewSourcingRepo()
 		userRepo := pgadapter.NewUserRepo()
+		activityRepo := pgadapter.NewActivityLogRepo()
 		verifier := newVerifier()
 
 		// Auth: HS256 JWT issuer (fail fast if JWT_SECRET is unset) + user repo.
@@ -108,15 +115,19 @@ func Init() {
 		// as its in-process handler; Cloud Tasks pushes to the worker URL.
 		q := newQueue(worker)
 
+		leadsUC := usecases.NewLeadUseCase(leadRepo, userRepo, activityRepo)
+		companiesUC := usecases.NewCompanyUseCase(companyRepo)
+
 		container = &Container{
-			DB:     &dbPinger{pool: pool},
-			Chat:   usecases.NewChatUseCase(convRepo, runner, locker, eventBroker),
-			Leads:  usecases.NewLeadUseCase(leadRepo),
-			Locker: locker,
-			Worker: worker,
-			Queue:  q,
-			Broker: eventBroker,
-			Auth:   authSvc,
+			DB:        &dbPinger{pool: pool},
+			Chat:      usecases.NewChatUseCase(convRepo, runner, locker, eventBroker),
+			Leads:     leadsUC,
+			Locker:    locker,
+			Worker:    worker,
+			Queue:     q,
+			Broker:    eventBroker,
+			Auth:      authSvc,
+			Dashboard: dashboardhttp.NewService(leadsUC, companiesUC),
 		}
 
 		// Idempotent admin bootstrap from ADMIN_EMAIL/ADMIN_PASSWORD (if both set).

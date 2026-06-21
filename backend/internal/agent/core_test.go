@@ -101,6 +101,12 @@ func (m *mockCompanyRepo) Upsert(ctx context.Context, company *domain.Company) e
 	m.byCUI[company.CUI] = company
 	return nil
 }
+func (m *mockCompanyRepo) ListPage(ctx context.Context, f domain.CompanyFilter) ([]*domain.CompanySummary, error) {
+	return nil, nil
+}
+func (m *mockCompanyRepo) Detail(ctx context.Context, id string) (*domain.CompanyDetail, error) {
+	return nil, nil
+}
 
 type mockContactRepo struct {
 	created []*domain.Contact
@@ -140,6 +146,22 @@ func (m *mockLeadRepo) List(ctx context.Context) ([]*domain.LeadSummary, error) 
 func (m *mockLeadRepo) GetByID(ctx context.Context, id string) (*domain.LeadDetail, error) {
 	return nil, nil
 }
+func (m *mockLeadRepo) ListPage(ctx context.Context, f domain.LeadFilter) ([]*domain.LeadSummary, error) {
+	return nil, nil
+}
+func (m *mockLeadRepo) Handoffs(ctx context.Context, f domain.LeadFilter) ([]*domain.HandoffItem, error) {
+	return nil, nil
+}
+func (m *mockLeadRepo) UpdateOffer(ctx context.Context, leadID string, upd domain.OfferUpdate) (*domain.LeadSummary, error) {
+	return nil, nil
+}
+func (m *mockLeadRepo) Assign(ctx context.Context, leadID string, userID *string) (*domain.LeadSummary, error) {
+	return nil, nil
+}
+func (m *mockLeadRepo) StatusExists(ctx context.Context, status string) (bool, error) {
+	return false, nil
+}
+func (m *mockLeadRepo) KPIs(ctx context.Context) (*domain.KPIs, error) { return nil, nil }
 
 type mockSourcingRepo struct {
 	created []*domain.SourcingRequest

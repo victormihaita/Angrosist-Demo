@@ -37,6 +37,26 @@ type LeadRepo interface {
 	UpdateCompanyContact(ctx context.Context, leadID, companyID, contactID string) error
 	List(ctx context.Context) ([]*domain.LeadSummary, error)
 	GetByID(ctx context.Context, id string) (*domain.LeadDetail, error)
+
+	// ListPage returns one keyset page of LeadSummary rows matching the filter,
+	// ordered created_at DESC, id DESC. It fetches filter.Limit+1 rows so the
+	// caller can detect whether a further page exists.
+	ListPage(ctx context.Context, filter domain.LeadFilter) ([]*domain.LeadSummary, error)
+	// Handoffs returns one keyset page of leads needing a human, newest first,
+	// each carrying a short snippet of the conversation's last message.
+	Handoffs(ctx context.Context, filter domain.LeadFilter) ([]*domain.HandoffItem, error)
+	// UpdateOffer applies a manual offer change (status/value/note) to the lead and
+	// returns ErrNotFound when no such lead exists. Nil OfferUpdate fields are left
+	// untouched. The status must already be validated against the lead_statuses
+	// lookup by the caller.
+	UpdateOffer(ctx context.Context, leadID string, upd domain.OfferUpdate) (*domain.LeadSummary, error)
+	// Assign sets leads.assigned_to (nil unassigns) and returns ErrNotFound when no
+	// such lead exists.
+	Assign(ctx context.Context, leadID string, userID *string) (*domain.LeadSummary, error)
+	// StatusExists reports whether the given code is a valid lead_statuses entry.
+	StatusExists(ctx context.Context, status string) (bool, error)
+	// KPIs computes the dashboard aggregate KPIs in a single pass.
+	KPIs(ctx context.Context) (*domain.KPIs, error)
 }
 
 type CompanyRepo interface {
@@ -47,7 +67,26 @@ type CompanyRepo interface {
 	// when the company carries verification data — records a company_verifications
 	// row for audit/cache.
 	Upsert(ctx context.Context, company *domain.Company) error
+
+	// ListPage returns one keyset page of directory companies matching the filter,
+	// ordered created_at DESC, id DESC (filter.Limit+1 rows for has-next detection).
+	ListPage(ctx context.Context, filter domain.CompanyFilter) ([]*domain.CompanySummary, error)
+	// Detail returns the directory detail (roles, latest verification, financials)
+	// for a company id, or ErrNotFound.
+	Detail(ctx context.Context, id string) (*domain.CompanyDetail, error)
 }
+
+// ActivityLogRepo appends to the first-class audit log (migration 022). Audit
+// rows are append-only and survive GDPR erasure (anonymized, never deleted).
+type ActivityLogRepo interface {
+	// Append writes one audit row. meta is serialized to JSONB; it must contain no
+	// PII beyond ids.
+	Append(ctx context.Context, entry domain.ActivityLog) error
+}
+
+// ErrNotFound is returned by repository reads/mutations when the addressed row
+// does not exist. The dashboard handlers map it to a 404 envelope.
+var ErrNotFound = errors.New("not found")
 
 type ContactRepo interface {
 	Create(ctx context.Context, contact *domain.Contact) error
