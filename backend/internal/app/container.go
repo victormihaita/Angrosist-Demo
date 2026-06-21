@@ -8,7 +8,8 @@ import (
 
 	"github.com/joho/godotenv"
 
-	"github.com/angrosist/demo/internal/agent/gemini"
+	"github.com/angrosist/demo/internal/agent"
+	geminillm "github.com/angrosist/demo/internal/agent/llm/gemini"
 	pgadapter "github.com/angrosist/demo/internal/persistence/postgres"
 	"github.com/angrosist/demo/internal/usecases"
 	"github.com/angrosist/demo/internal/verification/anaf"
@@ -47,7 +48,9 @@ func Init() {
 		sourcingRepo := pgadapter.NewSourcingRepo()
 		verifier := anaf.NewClient()
 
-		runner := gemini.NewRunner(
+		llm := geminillm.New()
+		runner := agent.New(
+			llm,
 			convRepo, msgRepo, companyRepo, contactRepo,
 			leadRepo, sourcingRepo, verifier,
 		)

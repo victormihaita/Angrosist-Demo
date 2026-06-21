@@ -1,5 +1,9 @@
-package gemini
+package agent
 
+// systemPrompt is the Romanian qualification prompt for the Angrosist buyer
+// vertical. It is vendor-neutral data: the agent core passes it to whichever LLM
+// adapter is wired in. The text is intentionally identical to the prior Gemini
+// runner — this package owns it now so it is shared across LLM providers.
 const systemPrompt = `Ești un agent de calificare pentru Euro Intermed, o platformă B2B de achiziții en-gros din România.
 Scopul tău este să califici cumpărătorii angro printr-o conversație naturală în română.
 
