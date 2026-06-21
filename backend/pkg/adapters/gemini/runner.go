@@ -14,13 +14,13 @@ import (
 )
 
 type Runner struct {
-	convRepo    ports.ConversationRepo
-	msgRepo     ports.MessageRepo
-	companyRepo ports.CompanyRepo
-	contactRepo ports.ContactRepo
-	leadRepo    ports.LeadRepo
+	convRepo     ports.ConversationRepo
+	msgRepo      ports.MessageRepo
+	companyRepo  ports.CompanyRepo
+	contactRepo  ports.ContactRepo
+	leadRepo     ports.LeadRepo
 	sourcingRepo ports.SourcingRepo
-	verifier    ports.CompanyVerifier
+	verifier     ports.CompanyVerifier
 }
 
 func NewRunner(
@@ -33,13 +33,13 @@ func NewRunner(
 	verifier ports.CompanyVerifier,
 ) *Runner {
 	return &Runner{
-		convRepo:    convRepo,
-		msgRepo:     msgRepo,
-		companyRepo: companyRepo,
-		contactRepo: contactRepo,
-		leadRepo:    leadRepo,
+		convRepo:     convRepo,
+		msgRepo:      msgRepo,
+		companyRepo:  companyRepo,
+		contactRepo:  contactRepo,
+		leadRepo:     leadRepo,
 		sourcingRepo: sourcingRepo,
-		verifier:    verifier,
+		verifier:     verifier,
 	}
 }
 
@@ -183,10 +183,10 @@ func (r *Runner) toolVerifyCompany(ctx context.Context, conv *domain.Conversatio
 
 	if !company.IsActive {
 		return map[string]any{
-			"found":    true,
-			"active":   false,
-			"name":     company.Name,
-			"reason":   "Compania este inactivă în baza de date ANAF",
+			"found":  true,
+			"active": false,
+			"name":   company.Name,
+			"reason": "Compania este inactivă în baza de date ANAF",
 		}, nil
 	}
 
@@ -204,11 +204,11 @@ func (r *Runner) toolVerifyCompany(ctx context.Context, conv *domain.Conversatio
 	conv.Extracted = extracted
 
 	return map[string]any{
-		"found":    true,
-		"active":   true,
-		"name":     company.Name,
-		"address":  company.Address,
-		"county":   company.County,
+		"found":   true,
+		"active":  true,
+		"name":    company.Name,
+		"address": company.Address,
+		"county":  company.County,
 	}, nil
 }
 

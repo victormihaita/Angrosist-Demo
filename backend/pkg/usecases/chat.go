@@ -12,10 +12,10 @@ type ChatRequest struct {
 }
 
 type ChatResponse struct {
-	ConversationID string            `json:"conversation_id"`
-	Reply          string            `json:"reply"`
-	State          string            `json:"state"`
-	Extracted      map[string]any    `json:"extracted"`
+	ConversationID string         `json:"conversation_id"`
+	Reply          string         `json:"reply"`
+	State          string         `json:"state"`
+	Extracted      map[string]any `json:"extracted"`
 }
 
 type ChatUseCase struct {
@@ -55,4 +55,3 @@ func (uc *ChatUseCase) RunTurn(ctx context.Context, req ChatRequest) (*ChatRespo
 		Extracted:      conv.Extracted,
 	}, nil
 }
-

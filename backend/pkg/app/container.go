@@ -16,7 +16,9 @@ import (
 
 const DBTimeout = 5 * time.Second
 
-type dbPinger struct{ pool interface{ Ping(context.Context) error } }
+type dbPinger struct {
+	pool interface{ Ping(context.Context) error }
+}
 
 func (d *dbPinger) Ping(ctx context.Context) error { return d.pool.Ping(ctx) }
 
@@ -37,13 +39,13 @@ func Init() {
 
 		pool := pgadapter.GetPool()
 
-		convRepo    := pgadapter.NewConversationRepo()
-		msgRepo     := pgadapter.NewMessageRepo()
+		convRepo := pgadapter.NewConversationRepo()
+		msgRepo := pgadapter.NewMessageRepo()
 		companyRepo := pgadapter.NewCompanyRepo()
 		contactRepo := pgadapter.NewContactRepo()
-		leadRepo    := pgadapter.NewLeadRepo()
+		leadRepo := pgadapter.NewLeadRepo()
 		sourcingRepo := pgadapter.NewSourcingRepo()
-		verifier    := anaf.NewClient()
+		verifier := anaf.NewClient()
 
 		runner := gemini.NewRunner(
 			convRepo, msgRepo, companyRepo, contactRepo,

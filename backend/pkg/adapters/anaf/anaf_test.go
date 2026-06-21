@@ -42,7 +42,7 @@ func TestParseAddress(t *testing.T) {
 		{
 			raw:    "MUNICIPIUL BUCUREȘTI, SECTOR 1, STR. VICTORIEI, NR. 1, AP. 2",
 			city:   "București",
-			county: "",           // no JUD. segment for Bucharest
+			county: "", // no JUD. segment for Bucharest
 			street: "Sector 1, Str. Victoriei, Nr. 1, Ap. 2",
 		},
 		{
