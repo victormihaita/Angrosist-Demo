@@ -3,9 +3,9 @@
 > **This is the file to open to see what's done, what's happening, and what's next.** Updated and committed after every unit of work. The full task list lives in `docs/BUILD_PLAN.md`; this is the running status on top of it.
 
 **Last updated:** 2026-06-21
-**Current milestone:** M0.5 — Demo hardening (paused mid-way for an ANAF audit)
-**Current task:** _resuming M0.5 H1/H2 (config + CORS + validation)_
-**Branch:** `main` · ⚠️ **Origin: local is AHEAD — `git push` blocked by a credentials mismatch** (`victor-mihaita` vs repo owner `victormihaita`). Fix auth to sync GitHub; all work is committed locally.
+**Current milestone:** M0.5 — Demo hardening ✅ (H3 folded into M2 by design)
+**Next milestone:** M1 — Foundation (needs a decision: GCP access for the cloud epics)
+**Branch:** `main` · ⚠️ **Origin: local is AHEAD by 7 commits — `git push` blocked by a credentials mismatch** (`victor-mihaita` vs repo owner `victormihaita`). Fix auth to sync GitHub; all work is committed locally.
 
 ---
 
@@ -13,8 +13,8 @@
 
 1. ✅ **Setup** — Claude OS, hard rules, BUILD_PLAN, specs, MCP, hooks _(done & merged)_
 2. ✅ **User journeys doc** — confirm the final outcome _(done)_
-3. ⏳ **M0.5 — Demo hardening** — close audit gaps on the existing demo _(in progress)_
-4. ⬜ **M1 — Foundation** — refactor to `/cmd`+`/internal`, GCP/Terraform, CI/CD, full schema
+3. ✅ **M0.5 — Demo hardening** — config hygiene, CORS, validation, error boundary, tests _(done; H3→M2)_
+4. ⏳ **M1 — Foundation** — refactor to `/cmd`+`/internal`, GCP/Terraform, CI/CD, full schema _(next; cloud epics need your GCP access)_
 5. ⬜ **M2 — Agent core + web widget** — channel-agnostic agent, async runtime, Claude LLM, WS/SSE
 6. ⬜ **M3 — Angrosist + dashboard** — Angrosist LIVE end-to-end
 7. ⬜ **M4 — WhatsApp + PalletClearance + photos + i18n**
@@ -30,29 +30,30 @@ Legend: ✅ done · ⏳ in progress · ⬜ not started
 
 > Goal: make the demo safe and modular before scaling it into Phase 1. Source: `docs/BUILD_PLAN.md` → M0.5.
 
-### H1 — Secrets & config hygiene
-- [ ] Confirm `.env` gitignored; document the test-keys decision (kept as-is per owner)
-- [ ] Move Gemini model name + DemoANAF base URL fully to env (no source defaults)
-- [ ] Audit both `.env.example` files for completeness
+### H1 — Secrets & config hygiene ✅
+- [x] `.env` gitignored confirmed; test-keys decision documented (kept as-is per owner)
+- [x] Gemini model name → `GEMINI_MODEL` env (no baked constant); ANAF base URL already env
+- [x] Both `.env.example` files completed (model, PORT, CORS, API URL)
 
-### H2 — API surface safety
-- [ ] Lock CORS to an env-configured allowlist (replace `*`)
-- [ ] Input validation on `/api/chat` (message length, conversation_id) + CUI format
-- [ ] Request size limit + basic rate limiting
+### H2 — API surface safety ✅
+- [x] CORS replaced with env-driven, origin-aware allowlist (`CORS_ALLOWED_ORIGINS`)
+- [x] Input validation on `/api/chat` (trim, length, conversation_id) + body cap; CUI already validated in adapter
+- [x] Request size limit (64KB `MaxBytesReader`)  ·  _rate limiting → deferred to M2 (needs the async/edge layer)_
 
-### H3 — LLM behind a port
-- [ ] Introduce provider-neutral `LLM` port; move Gemini code into an adapter
-- [ ] Retry/backoff + timeout + graceful failure on LLM & ANAF calls
+### H3 — LLM behind a port → **folded into M2** (by design)
+- [ ] Provider-neutral `LLM` port + move Gemini into an adapter — done as part of M2 Epic 2.1 (agent-core split), so the runner is restructured once, not twice.
+- [ ] Retry/backoff on LLM calls — with the port, in M2. (ANAF already has a 10s timeout; ANAF retry/fallback lands in M1 Epic 1.5 repoint.)
 
-### H4 — Baseline tests & errors
-- [ ] Unit-test qualification/extraction use-case with a mock LLM port
-- [ ] Extend ANAF adapter contract tests
-- [ ] Frontend error boundary + visible network-error toast
+### H4 — Baseline tests & errors ✅
+- [x] Backend unit test (CORS resolution) + fixed pre-existing broken ANAF test (implemented demo mode)
+- [x] Frontend app error boundary + resilient QueryClient defaults
+- [ ] Toast system (sonner) → M3 dashboard, via shadcn MCP _(full use-case test with a mock LLM port lands with the M2 port)_
 
 ---
 
 ## Changelog (newest first)
 
+- **2026-06-21** — **M0.5 complete.** Backend: env-driven CORS allowlist, `/api/chat` input validation + 64KB body cap, `GEMINI_MODEL` env, implemented ANAF demo mode (fixed a broken test), gofmt-normalized, CORS unit test. Frontend: app error boundary, resilient QueryClient defaults, lint+build clean. H3 (LLM port) intentionally folded into M2.
 - **2026-06-21** — Audited the company-verification provider → `docs/specs/ANAF_API.md`. Decision: use DemoANAF **free** REST API (richer than the raw ANAF service the demo currently calls); endpoints `/company/:cui` (+ optional `/financials`, `/caen`, `/search`); free tier is enough; flagged a demo/adapter discrepancy + missing commercial terms. Threaded tasks into BUILD_PLAN M1 Epic 1.5.
 - **2026-06-21** — Added `docs/USER_JOURNEYS.md` (all actor journeys) + this tracker. Starting M0.5.
 - **2026-06-21** — Merged Claude OS + planning suite to `main` (hard rules, BUILD_PLAN, 6 specs, 7 agents, 6 commands, MCP, hooks).
