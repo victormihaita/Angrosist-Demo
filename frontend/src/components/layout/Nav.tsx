@@ -20,6 +20,14 @@ const LINKS = [
   { to: '/dashboard', label: 'Dashboard', exact: false },
 ]
 
+// Dashboard sub-navigation — only rendered on /dashboard* routes. `exact` keeps
+// Pipeline from staying active on the Companies/Handoffs sections.
+const DASHBOARD_LINKS = [
+  { to: '/dashboard', label: t.nav.pipeline },
+  { to: '/dashboard/companies', label: t.nav.companies },
+  { to: '/dashboard/handoffs', label: t.nav.handoffs },
+]
+
 function initials(name: string): string {
   return name
     .split(' ')
@@ -37,6 +45,19 @@ export function Nav() {
 
   function isActive(to: string, exact: boolean) {
     return exact ? pathname === to : pathname.startsWith(to)
+  }
+
+  // Sub-nav active state: Companies / Handoffs match by prefix; Pipeline owns
+  // /dashboard and the lead detail (/dashboard/:id), i.e. anything under
+  // /dashboard that isn't a companies/handoffs section.
+  function isSubActive(to: string) {
+    if (to === '/dashboard') {
+      return (
+        !pathname.startsWith('/dashboard/companies') &&
+        !pathname.startsWith('/dashboard/handoffs')
+      )
+    }
+    return pathname.startsWith(to)
   }
 
   return (
@@ -109,6 +130,28 @@ export function Nav() {
           )}
         </div>
       </div>
+
+      {/* Dashboard sub-navigation — only on /dashboard* routes. */}
+      {onDashboard && (
+        <div className="border-t bg-muted/30">
+          <nav className="max-w-7xl mx-auto px-4 h-10 flex items-center gap-0.5">
+            {DASHBOARD_LINKS.map(({ to, label }) => (
+              <Link
+                key={to}
+                to={to}
+                className={cn(
+                  'px-3 py-1 rounded-md text-sm font-medium transition-colors whitespace-nowrap',
+                  isSubActive(to)
+                    ? 'bg-background text-foreground shadow-sm'
+                    : 'text-muted-foreground hover:text-foreground hover:bg-background/60',
+                )}
+              >
+                {label}
+              </Link>
+            ))}
+          </nav>
+        </div>
+      )}
     </header>
   )
 }

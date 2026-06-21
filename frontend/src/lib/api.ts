@@ -329,6 +329,114 @@ export async function listUsers(): Promise<PublicUser[]> {
   return authedFetch<PublicUser[]>('/users')
 }
 
+// --- B2B directory (companies) --------------------------------------------
+
+export type CompanyRole =
+  | 'distributor'
+  | 'importer'
+  | 'wholesaler'
+  | 'retailer'
+  | 'horeca'
+  | 'processor'
+  | 'producer'
+  | 'buyer'
+  | 'seller'
+
+/** CompanySummary mirrors domain.CompanySummary / openapi Company. */
+export interface CompanySummary {
+  id: string
+  name: string
+  cui: string
+  country: string
+  reg_no: string
+  caen: string
+  vat_status: string
+  roles: string[]
+  created_at: string
+}
+
+export interface CompanyListPage {
+  data: CompanySummary[]
+  page: PageInfo
+}
+
+export interface CompanyFilters {
+  role?: string
+  country?: string
+  q?: string
+  cursor?: string
+  limit?: number
+}
+
+export async function listCompanies(
+  filters: CompanyFilters,
+): Promise<CompanyListPage> {
+  const params = new URLSearchParams()
+  if (filters.role) params.set('role', filters.role)
+  if (filters.country) params.set('country', filters.country)
+  if (filters.q) params.set('q', filters.q)
+  if (filters.cursor) params.set('cursor', filters.cursor)
+  if (filters.limit) params.set('limit', String(filters.limit))
+  const qs = params.toString()
+  return authedFetch<CompanyListPage>(`/companies${qs ? `?${qs}` : ''}`)
+}
+
+export interface CompanyFinancialView {
+  year: number
+  turnover: number | null
+}
+
+/** CompanyDetail mirrors domain.CompanyDetail / openapi CompanyDetail. */
+export interface CompanyDetail extends CompanySummary {
+  address?: string
+  county?: string
+  is_active?: boolean
+  verification?: CompanyVerificationView | null
+  financials?: CompanyFinancialView[]
+}
+
+export async function getCompany(id: string): Promise<CompanyDetail> {
+  return authedFetch<CompanyDetail>(`/companies/${encodeURIComponent(id)}`)
+}
+
+// --- Handoff queue ---------------------------------------------------------
+
+/** HandoffItem mirrors domain.HandoffItem / openapi HandoffItem. */
+export interface HandoffItem {
+  id: string
+  status: string
+  vertical: string
+  company_name: string
+  product_name: string
+  assigned_to: string | null
+  last_message: string
+  created_at: string
+}
+
+export interface HandoffListPage {
+  data: HandoffItem[]
+  page: PageInfo
+}
+
+export async function listHandoffs(): Promise<HandoffListPage> {
+  return authedFetch<HandoffListPage>('/handoffs')
+}
+
+// --- KPIs ------------------------------------------------------------------
+
+/** Kpis mirrors domain.KPIs / openapi Kpis. */
+export interface Kpis {
+  offers_sent: number
+  won: number
+  qualified: number
+  conversion_rate: number
+  pipeline_value: number
+}
+
+export async function getKpis(): Promise<Kpis> {
+  return authedFetch<Kpis>('/kpis')
+}
+
 // ---------------------------------------------------------------------------
 // SSE: real-time agent replies + typing indicator (M2 Epic 2.3)
 // ---------------------------------------------------------------------------

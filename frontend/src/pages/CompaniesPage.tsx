@@ -2,40 +2,31 @@ import { useCallback, useMemo } from 'react'
 import { useSearchParams } from 'react-router-dom'
 import { Button } from '@/components/ui/button'
 import { Skeleton } from '@/components/ui/skeleton'
-import { LeadTable } from '@/components/dashboard/LeadTable'
-import { KpiCards } from '@/components/dashboard/KpiCards'
+import { CompanyTable } from '@/components/dashboard/CompanyTable'
 import {
-  LeadFilterBar,
-  UNASSIGNED,
-  type FilterState,
-} from '@/components/dashboard/LeadFilterBar'
-import { useLeadsList, useUsers } from '@/hooks/useDashboard'
+  CompanyFilterBar,
+  type CompanyFilterState,
+} from '@/components/dashboard/CompanyFilterBar'
+import { useCompaniesList } from '@/hooks/useDashboard'
 import { t } from '@/lib/strings'
-import type { LeadFilters } from '@/lib/api'
+import type { CompanyFilters } from '@/lib/api'
 
 const PAGE_SIZE = 25
 
-export function DashboardPage() {
+export function CompaniesPage() {
   const [searchParams, setSearchParams] = useSearchParams()
-  const { data: users = [] } = useUsers()
 
-  // The assignee filter is only meaningful when we can resolve names. Admins get
-  // the full list; staff (403) get an empty list, so we hide the picker.
-  const showAssignee = users.length > 0
-
-  const filters: FilterState = useMemo(
+  const filters: CompanyFilterState = useMemo(
     () => ({
-      status: searchParams.get('status') ?? '',
-      vertical: searchParams.get('vertical') ?? '',
-      assigned_to: searchParams.get('assigned_to') ?? '',
+      role: searchParams.get('role') ?? '',
+      country: searchParams.get('country') ?? '',
       q: searchParams.get('q') ?? '',
     }),
     [searchParams],
   )
 
-  // Cursor stack lives in the URL so Prev/Back works and pages are shareable.
-  // `cursors` is a comma-joined list of cursors consumed so far; the current
-  // page uses the last one.
+  // Same keyset-cursor stack as the pipeline: a comma-joined list in the URL so
+  // Prev/Back works and pages are shareable.
   const cursorStack = useMemo(() => {
     const raw = searchParams.get('cursors')
     return raw ? raw.split(',').filter(Boolean) : []
@@ -43,24 +34,20 @@ export function DashboardPage() {
 
   const currentCursor = cursorStack[cursorStack.length - 1]
 
-  const queryFilters: LeadFilters = {
-    status: filters.status || undefined,
-    vertical: filters.vertical || undefined,
-    assigned_to:
-      filters.assigned_to === UNASSIGNED
-        ? 'none'
-        : filters.assigned_to || undefined,
+  const queryFilters: CompanyFilters = {
+    role: filters.role || undefined,
+    country: filters.country || undefined,
     q: filters.q || undefined,
     cursor: currentCursor || undefined,
     limit: PAGE_SIZE,
   }
 
   const { data, isLoading, isFetching, error, refetch } =
-    useLeadsList(queryFilters)
+    useCompaniesList(queryFilters)
 
   // Changing a filter resets pagination (drop the cursor stack).
   const onFilterChange = useCallback(
-    (patch: Partial<FilterState>) => {
+    (patch: Partial<CompanyFilterState>) => {
       setSearchParams((prev) => {
         const next = new URLSearchParams(prev)
         for (const [key, val] of Object.entries(patch)) {
@@ -100,21 +87,14 @@ export function DashboardPage() {
   return (
     <div className="max-w-7xl mx-auto px-4 py-8 w-full min-w-0">
       <div className="mb-6">
-        <h1 className="text-xl font-semibold">{t.pipeline.title}</h1>
+        <h1 className="text-xl font-semibold">{t.companies.title}</h1>
         <p className="text-sm text-muted-foreground mt-1">
-          {t.pipeline.subtitle}
+          {t.companies.subtitle}
         </p>
       </div>
 
-      <KpiCards />
-
       <div className="mb-4">
-        <LeadFilterBar
-          value={filters}
-          users={users}
-          showAssignee={showAssignee}
-          onChange={onFilterChange}
-        />
+        <CompanyFilterBar value={filters} onChange={onFilterChange} />
       </div>
 
       {isLoading && (
@@ -127,7 +107,7 @@ export function DashboardPage() {
 
       {error && !isLoading && (
         <div className="flex flex-col items-center gap-3 py-16">
-          <p className="text-sm text-destructive">{t.pipeline.loadError}</p>
+          <p className="text-sm text-destructive">{t.companies.loadError}</p>
           <Button variant="outline" size="sm" onClick={() => refetch()}>
             {t.common.retry}
           </Button>
@@ -138,15 +118,15 @@ export function DashboardPage() {
         <>
           {data.data.length === 0 ? (
             <div className="flex flex-col items-center justify-center py-20 text-muted-foreground text-sm gap-2">
-              <span>{t.pipeline.empty}</span>
+              <span>{t.companies.empty}</span>
             </div>
           ) : (
-            <LeadTable leads={data.data} users={users} />
+            <CompanyTable companies={data.data} />
           )}
 
           <div className="flex items-center justify-between mt-4">
             <span className="text-xs text-muted-foreground">
-              {data.page.count} {data.page.count === 1 ? 'lead' : 'lead-uri'}
+              {t.companies.count(data.page.count)}
             </span>
             <div className="flex items-center gap-2">
               <Button

@@ -78,6 +78,57 @@ export const t = {
     assignError: 'Nu am putut aloca lead-ul.',
     assignToMe: 'Aloca-mi mie',
   },
+  nav: {
+    pipeline: 'Pipeline',
+    companies: 'Companii',
+    handoffs: 'Intervenții',
+  },
+  kpi: {
+    offersSent: 'Oferte trimise',
+    won: 'Câștigate',
+    conversionRate: 'Rată conversie',
+    pipelineValue: 'Valoare pipeline',
+  },
+  companies: {
+    title: 'Director companii B2B',
+    subtitle: 'Companii verificate disponibile pentru matching',
+    search: 'Caută după nume...',
+    filterRole: 'Rol',
+    allRoles: 'Toate rolurile',
+    filterCountry: 'Țară (cod, ex. RO)',
+    empty: 'Nu există companii pentru filtrele selectate.',
+    loadError: 'Nu am putut încărca companiile.',
+    count: (n: number) => `${n} ${n === 1 ? 'companie' : 'companii'}`,
+    colName: 'Nume',
+    colCui: 'CUI',
+    colCountry: 'Țară',
+    colCaen: 'CAEN',
+    colVat: 'TVA',
+    colRoles: 'Roluri',
+    notFound: 'Companie negăsită.',
+    identity: 'Identitate',
+    verification: 'Verificare',
+    financials: 'Date financiare',
+    regNo: 'Nr. înregistrare',
+    address: 'Adresă',
+    county: 'Județ',
+    active: 'Activă',
+    inactive: 'Inactivă',
+    year: 'An',
+    turnover: 'Cifră de afaceri',
+    noFinancials: 'Fără date financiare.',
+  },
+  handoffs: {
+    title: 'Coadă de intervenții',
+    subtitle: 'Lead-uri care necesită un consultant uman',
+    empty: 'Nicio intervenție necesară momentan.',
+    loadError: 'Nu am putut încărca coada de intervenții.',
+    colCompany: 'Companie',
+    colProduct: 'Produs',
+    colSnippet: 'Ultimul mesaj',
+    colCreated: 'Vechime',
+    open: 'Deschide',
+  },
   status: {
     new: 'Nou',
     qualifying: 'În calificare',
@@ -120,4 +171,27 @@ export function statusLabel(status: string): string {
 
 export function verticalLabel(v: string): string {
   return t.vertical[v] ?? v
+}
+
+/** Company roles in directory order, used for the role filter Select. */
+export const COMPANY_ROLES: { value: string; label: string }[] = [
+  'distributor',
+  'importer',
+  'wholesaler',
+  'retailer',
+  'horeca',
+  'processor',
+  'producer',
+  'buyer',
+  'seller',
+].map((value) => ({ value, label: value }))
+
+/** Compact RON currency formatter shared across pipeline + directory + KPIs. */
+export function formatRON(v: number | null | undefined): string {
+  if (v == null) return t.common.none
+  return new Intl.NumberFormat('ro-RO', {
+    style: 'currency',
+    currency: 'RON',
+    maximumFractionDigits: 0,
+  }).format(v)
 }

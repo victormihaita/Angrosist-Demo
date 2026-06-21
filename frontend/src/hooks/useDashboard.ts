@@ -3,8 +3,13 @@ import {
   listLeads,
   getLeadDetail,
   listUsers,
+  listCompanies,
+  getCompany,
+  listHandoffs,
+  getKpis,
   ApiError,
   type LeadFilters,
+  type CompanyFilters,
 } from '@/lib/api'
 
 /** Paginated, filtered lead list. Filters/cursor come from the URL. */
@@ -43,5 +48,48 @@ export function useUsers() {
       }
     },
     staleTime: 5 * 60_000,
+  })
+}
+
+/** Paginated, filtered B2B directory list. Filters/cursor come from the URL. */
+export function useCompaniesList(filters: CompanyFilters) {
+  return useQuery({
+    queryKey: ['companies', filters],
+    queryFn: () => listCompanies(filters),
+    placeholderData: (prev) => prev,
+  })
+}
+
+/** Full company detail (identity + verification + financials). */
+export function useCompanyDetail(id: string) {
+  return useQuery({
+    queryKey: ['company', id],
+    queryFn: () => getCompany(id),
+    enabled: !!id,
+  })
+}
+
+/** Human-handoff queue (needs_human leads). */
+export function useHandoffs() {
+  return useQuery({
+    queryKey: ['handoffs'],
+    queryFn: () => listHandoffs(),
+  })
+}
+
+/** Dashboard KPI aggregates. Admin-gated on the backend; 403 → null so the
+ *  KPI strip simply hides for staff instead of erroring. */
+export function useKpis() {
+  return useQuery({
+    queryKey: ['kpis'],
+    queryFn: async () => {
+      try {
+        return await getKpis()
+      } catch (err) {
+        if (err instanceof ApiError && err.status === 403) return null
+        throw err
+      }
+    },
+    staleTime: 60_000,
   })
 }

@@ -17,6 +17,17 @@ const DashboardPage = lazy(() =>
 const LeadDetailPage = lazy(() =>
   import('@/pages/LeadDetailPage').then((m) => ({ default: m.LeadDetailPage })),
 )
+const CompaniesPage = lazy(() =>
+  import('@/pages/CompaniesPage').then((m) => ({ default: m.CompaniesPage })),
+)
+const CompanyDetailPage = lazy(() =>
+  import('@/pages/CompanyDetailPage').then((m) => ({
+    default: m.CompanyDetailPage,
+  })),
+)
+const HandoffsPage = lazy(() =>
+  import('@/pages/HandoffsPage').then((m) => ({ default: m.HandoffsPage })),
+)
 const LoginPage = lazy(() =>
   import('@/pages/LoginPage').then((m) => ({ default: m.LoginPage })),
 )
@@ -61,6 +72,30 @@ function AppLayout() {
               element={
                 <ProtectedRoute>
                   <DashboardPage />
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="/dashboard/companies"
+              element={
+                <ProtectedRoute>
+                  <CompaniesPage />
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="/dashboard/companies/:id"
+              element={
+                <ProtectedRoute>
+                  <CompanyDetailPage />
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="/dashboard/handoffs"
+              element={
+                <ProtectedRoute>
+                  <HandoffsPage />
                 </ProtectedRoute>
               }
             />
