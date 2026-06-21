@@ -3,9 +3,8 @@
 > **This is the file to open to see what's done, what's happening, and what's next.** Updated and committed after every unit of work. The full task list lives in `docs/BUILD_PLAN.md`; this is the running status on top of it.
 
 **Last updated:** 2026-06-21
-**Current milestone:** M2 — Agent core + web widget (in progress)
-**Done:** Epic 2.1 ✅ (LLM port + Gemini/Claude adapters) · Epic 2.2 ✅ (Queue port + worker + per-conversation advisory lock + idempotency, real-DB tested).
-**Next:** Epic 2.3 — widget over WS/SSE + typing (cross-layer: backend SSE broker + frontend).
+**Current milestone:** M2 — Agent core + web widget ✅ (2.1 LLM port + adapters · 2.2 async runtime · 2.3 SSE widget + typing)
+**Next milestone:** M3 — Angrosist LIVE + dashboard (full buyer flow, GCS upload, pipeline/lead-detail/offer tracking, email, handoff). Includes the deferred ANAF→DemoANAF repoint (Epic 1.5).
 **Branches:** `main` = the **Vercel demo** (frozen at pre-today `b5d1b3d`, do not push WIP here). `develop` = **active build** (this is where we work). Push auth fixed (gh active account → `victormihaita`).
 
 ---
@@ -16,8 +15,8 @@
 2. ✅ **User journeys doc** — confirm the final outcome _(done)_
 3. ✅ **M0.5 — Demo hardening** — config hygiene, CORS, validation, error boundary, tests _(done; H3→M2)_
 4. ✅ **M1 — Foundation** — refactor done, full Phase-1 schema (009-023, tested), Terraform + CI/CD as code (dormant), local Docker. _ANAF repoint→M3; GCP provisioning + Meta verification = owner actions._
-5. ⏳ **M2 — Agent core + web widget** — channel-agnostic agent, async runtime, Claude LLM, WS/SSE _(next)_
-6. ⬜ **M3 — Angrosist + dashboard** — Angrosist LIVE end-to-end
+5. ✅ **M2 — Agent core + web widget** — LLM port + Gemini/Claude adapters, async runtime, SSE widget + typing
+6. ⏳ **M3 — Angrosist + dashboard** — Angrosist LIVE end-to-end _(next)_
 7. ⬜ **M4 — WhatsApp + PalletClearance + photos + i18n**
 8. ⬜ **M5 — KPIs, GDPR/security, backup, testing, handover**
 9. ⬜ **Phase 2 (M2.1–M2.3)** — SkalYou marketplace
@@ -54,6 +53,7 @@ Legend: ✅ done · ⏳ in progress · ⬜ not started
 
 ## Changelog (newest first)
 
+- **2026-06-21** — **M2 complete.** Epic 2.2: Queue port (local + Cloud Tasks push) + `cmd/worker` endpoint + Postgres per-conversation advisory lock + idempotency by provider message ID (real-DB tested). Epic 2.3: in-process SSE `Broker` port + `GET /api/stream` (typing/message/error, heartbeat) publishing from both sync and async paths; frontend `useChat` consumes SSE with a ~1.5s POST fallback (keeps the Vercel demo working). `/api/chat` response unchanged throughout.
 - **2026-06-21** — **M2 Epic 2.1 done.** Split the coupled Gemini runner into a vendor-neutral `LLM` port + agent core (turn loop, tool registry, state machine, RO prompt) + thin Gemini adapter, then added a **Claude/Anthropic adapter** behind the same port. `LLM_PROVIDER` env swaps providers (gemini default, claude for prod); agent core has zero vendor SDK imports (verified). Unit-tested with mock LLM + the Claude mapping helpers.
 - **2026-06-21** — **M1 cloud-ready (deferred provisioning).** `deploy/terraform/`: 8 modules (Artifact Registry, IAM SAs, Secret Manager, Cloud SQL, GCS, Cloud Run, Cloud Tasks, Cloud Scheduler) composed per env (dev/staging/prod); EU region, least-privilege, no secret values. `.github/workflows/`: CI runs on push; GCP deploy jobs DORMANT (workflow_dispatch + `DEPLOY_ENABLED` guard) via Workload Identity Federation. Dockerfile now builds the worker too. Validated with tofu + actionlint. **M1 buildable scope complete.**
 - **2026-06-21** — **Full Phase-1 schema** (migrations 009-023): lookups, users, categories, company_verifications/financials, consents, listings, buyer_profiles, documents, activity_logs, templates; enriched companies/contacts/leads/etc.; all indexes + GDPR cascade. Tested clean apply + idempotent on scratch Postgres.
