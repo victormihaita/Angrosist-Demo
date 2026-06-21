@@ -4,8 +4,8 @@
 
 **Last updated:** 2026-06-21
 **Current milestone:** M2 — Agent core + web widget (in progress)
-**Done:** Epic 2.1 ✅ — vendor-neutral LLM port + agent-core split + Gemini & Claude adapters (provider swap via `LLM_PROVIDER`).
-**Next:** Epic 2.2 (async worker, idempotency, per-conversation lock) → Epic 2.3 (widget over WS/SSE + typing).
+**Done:** Epic 2.1 ✅ (LLM port + Gemini/Claude adapters) · Epic 2.2 ✅ (Queue port + worker + per-conversation advisory lock + idempotency, real-DB tested).
+**Next:** Epic 2.3 — widget over WS/SSE + typing (cross-layer: backend SSE broker + frontend).
 **Branches:** `main` = the **Vercel demo** (frozen at pre-today `b5d1b3d`, do not push WIP here). `develop` = **active build** (this is where we work). Push auth fixed (gh active account → `victormihaita`).
 
 ---
