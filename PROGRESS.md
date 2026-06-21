@@ -3,9 +3,10 @@
 > **This is the file to open to see what's done, what's happening, and what's next.** Updated and committed after every unit of work. The full task list lives in `docs/BUILD_PLAN.md`; this is the running status on top of it.
 
 **Last updated:** 2026-06-21
-**Current milestone:** M0.5 — Demo hardening ✅ (H3 folded into M2 by design)
-**Next milestone:** M1 — Foundation (needs a decision: GCP access for the cloud epics)
-**Branch:** `main` · ⚠️ **Origin: local is AHEAD by 7 commits — `git push` blocked by a credentials mismatch** (`victor-mihaita` vs repo owner `victormihaita`). Fix auth to sync GitHub; all work is committed locally.
+**Current milestone:** M1 — Foundation (in progress)
+**Done this run:** repo refactored to /cmd + /internal; full local Docker stack added.
+**Next task:** M1 schema migrations + repoint ANAF adapter to DemoANAF; then Terraform + CI/CD as code (provisioning deferred).
+**Branch:** `main` · push auth fixed (gh active account → `victormihaita`). _Owner pushes; Claude commits locally and flags when ready._
 
 ---
 
@@ -53,6 +54,9 @@ Legend: ✅ done · ⏳ in progress · ⬜ not started
 
 ## Changelog (newest first)
 
+- **2026-06-21** — **Local Docker stack** added: `docker compose up --build` runs Postgres + migrations + backend + frontend (no GCP needed). Backend/frontend Dockerfiles, nginx SPA config, compose with healthcheck + migrate-before-backend ordering, root `.env.example`. Compose config validated (daemon was down, so no build run here — run locally).
+- **2026-06-21** — **Backend refactored** to the target `/cmd` + `/internal` layout (M1 Epic 1.1): pkg→internal moves via git mv, `CompanyVerifier`→`CompanyDataProvider`, `cmd/worker` skeleton. Gemini kept whole (LLM-port split is M2). Build/vet/test green.
+- **2026-06-21** — Fixed git push (gh had two accounts; switched active to `victormihaita`).
 - **2026-06-21** — **M0.5 complete.** Backend: env-driven CORS allowlist, `/api/chat` input validation + 64KB body cap, `GEMINI_MODEL` env, implemented ANAF demo mode (fixed a broken test), gofmt-normalized, CORS unit test. Frontend: app error boundary, resilient QueryClient defaults, lint+build clean. H3 (LLM port) intentionally folded into M2.
 - **2026-06-21** — Audited the company-verification provider → `docs/specs/ANAF_API.md`. Decision: use DemoANAF **free** REST API (richer than the raw ANAF service the demo currently calls); endpoints `/company/:cui` (+ optional `/financials`, `/caen`, `/search`); free tier is enough; flagged a demo/adapter discrepancy + missing commercial terms. Threaded tasks into BUILD_PLAN M1 Epic 1.5.
 - **2026-06-21** — Added `docs/USER_JOURNEYS.md` (all actor journeys) + this tracker. Starting M0.5.

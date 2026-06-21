@@ -1,0 +1,69 @@
+# Local full-stack for testing without GCP: Postgres + migrations + backend + frontend.
+#   docker compose up --build
+# Then: frontend http://localhost:5173 · backend http://localhost:8080/api/health
+#
+# Secrets (GEMINI_API_KEY, etc.) are read from ./backend/.env (gitignored).
+# The local Postgres DATABASE_URL is injected here and overrides any value in
+# backend/.env, so the stack is fully self-contained. Nothing is hardcoded in
+# images; compose-level defaults below can be overridden via a root .env file.
+
+services:
+  db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-angrosist}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-angrosist}
+      POSTGRES_DB: ${POSTGRES_DB:-angrosist}
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-angrosist} -d ${POSTGRES_DB:-angrosist}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  # Runs migrations once, then exits. Backend waits for it to complete.
+  migrate:
+    build: ./backend
+    command: ["/app/migrate"]
+    environment:
+      DATABASE_URL: postgres://${POSTGRES_USER:-angrosist}:${POSTGRES_PASSWORD:-angrosist}@db:5432/${POSTGRES_DB:-angrosist}?sslmode=disable
+    depends_on:
+      db:
+        condition: service_healthy
+    restart: "no"
+
+  backend:
+    build: ./backend
+    env_file:
+      # Secrets (GEMINI_API_KEY, GEMINI_MODEL, DEMOANAF_BASE_URL, ANAF_DEMO_MODE).
+      # Optional so a fresh clone without backend/.env still starts.
+      - path: ./backend/.env
+        required: false
+    environment:
+      # These override anything in backend/.env so local always uses local Postgres.
+      DATABASE_URL: postgres://${POSTGRES_USER:-angrosist}:${POSTGRES_PASSWORD:-angrosist}@db:5432/${POSTGRES_DB:-angrosist}?sslmode=disable
+      PORT: "8080"
+      CORS_ALLOWED_ORIGINS: ${CORS_ALLOWED_ORIGINS:-*}
+    ports:
+      - "8080:8080"
+    depends_on:
+      db:
+        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
+
+  frontend:
+    build:
+      context: ./frontend
+      args:
+        VITE_API_URL: ${VITE_API_URL:-http://localhost:8080}
+    ports:
+      - "5173:80"
+    depends_on:
+      - backend
+
+volumes:
+  pgdata:

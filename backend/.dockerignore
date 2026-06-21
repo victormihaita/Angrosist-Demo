@@ -1,0 +1,10 @@
+# Never bake secrets or local artifacts into the image.
+.env
+.env.*
+!.env.example
+server
+migrate
+out/
+*.test
+.git
+CLAUDE.md

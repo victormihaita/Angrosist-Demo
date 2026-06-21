@@ -46,7 +46,26 @@ docs/        # Product/spec docs + BUILD_PLAN + specs/
 
 Go backend (Docker/Cloud Run) · PostgreSQL (Cloud SQL) · Cloud Tasks · Cloud Scheduler · GCS · Secret Manager · Artifact Registry · React/TypeScript frontend · Anthropic Claude (LLM, prod) / Gemini (demo) · WhatsApp Cloud API · DemoANAF (company verification) · external EU email provider · Cloudflare · Terraform · Cloud Logging/Monitoring + Sentry.
 
-## Local development
+## Run the whole stack locally with Docker (no GCP needed)
+
+The fastest way to test end-to-end. Brings up Postgres + runs migrations + backend API + frontend:
+
+```bash
+cp backend/.env.example backend/.env   # add your GEMINI_API_KEY (the DB URL is set by compose)
+docker compose up --build
+```
+
+Then open:
+- Frontend → http://localhost:5173
+- Backend health → http://localhost:8080/api/health
+
+Notes:
+- The local Postgres connection is injected by `docker-compose.yml` and **overrides** `DATABASE_URL` in `backend/.env`, so the stack is self-contained (no Neon needed locally).
+- Secrets come from `backend/.env` (gitignored). Compose-level knobs (DB creds, CORS, `VITE_API_URL`) can be overridden via a root `.env` (see `.env.example`).
+- To run the agent without any external ANAF dependency, set `ANAF_DEMO_MODE=true` in `backend/.env`.
+- Stop with `docker compose down` (add `-v` to wipe the database volume).
+
+## Local development (without Docker)
 
 > Detailed setup lives in `CONTRIBUTING.md`. Quick version:
 

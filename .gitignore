@@ -1,4 +1,5 @@
 # env files — never commit real values
+/.env
 backend/.env
 frontend/.env
 
