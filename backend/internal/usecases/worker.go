@@ -33,16 +33,50 @@ type AsyncRunner interface {
 // results rather than errors, so an error bubbling out of RunTurnPersisted is
 // treated as retryable by default.
 type TurnWorker struct {
-	runner  AsyncRunner
-	locker  ports.Locker
-	msgRepo ports.MessageRepo
+	runner   AsyncRunner
+	locker   ports.Locker
+	msgRepo  ports.MessageRepo
+	convRepo ports.ConversationRepo
+	broker   ports.Broker
 }
 
 var _ ports.TurnProcessor = (*TurnWorker)(nil)
 
 // NewTurnWorker wires the async turn processor.
-func NewTurnWorker(runner AsyncRunner, locker ports.Locker, msgRepo ports.MessageRepo) *TurnWorker {
-	return &TurnWorker{runner: runner, locker: locker, msgRepo: msgRepo}
+//
+// convRepo and broker power live delivery: after a turn the worker reloads the
+// conversation and publishes a message event so a subscribed SSE client receives
+// the async reply (the same events the synchronous /api/chat path emits). Both
+// may be nil — publishing is then skipped and the worker behaves exactly as
+// before, keeping existing callers/tests working.
+func NewTurnWorker(runner AsyncRunner, locker ports.Locker, msgRepo ports.MessageRepo, convRepo ports.ConversationRepo, broker ports.Broker) *TurnWorker {
+	return &TurnWorker{runner: runner, locker: locker, msgRepo: msgRepo, convRepo: convRepo, broker: broker}
+}
+
+// publish is a nil-safe Broker.Publish so a missing broker is a no-op.
+func (w *TurnWorker) publish(convID string, ev ports.Event) {
+	if w.broker != nil {
+		w.broker.Publish(convID, ev)
+	}
+}
+
+// publishReply reloads the conversation and publishes a completed-turn message
+// event. Best-effort: a reload failure is logged (no PII) and does not affect the
+// turn outcome.
+func (w *TurnWorker) publishReply(ctx context.Context, convID, reply string) {
+	if w.broker == nil {
+		return
+	}
+	ev := ports.Event{Type: ports.EventMessage, Reply: reply}
+	if w.convRepo != nil {
+		if conv, err := w.convRepo.GetByID(ctx, convID); err != nil {
+			log.Printf("worker: load conversation for broker publish conversation=%s: %v", convID, err)
+		} else {
+			ev.State = string(conv.State)
+			ev.Extracted = conv.Extracted
+		}
+	}
+	w.publish(convID, ev)
 }
 
 // Process runs one job. Concurrency for the same conversation is serialized by
@@ -68,18 +102,27 @@ func (w *TurnWorker) Process(ctx context.Context, job ports.TurnJob) error {
 				log.Printf("worker: skipping duplicate provider_msg_id=%q conversation=%s", job.ProviderMsgID, job.ConversationID)
 				return nil
 			}
+			// Signal typing before the turn work (only for messages we will process).
+			w.publish(job.ConversationID, ports.Event{Type: ports.EventTyping})
 			// The user message is now persisted; run the turn without re-appending.
-			if _, err := w.runner.RunTurnPersisted(ctx, job.ConversationID, job.Message); err != nil {
+			reply, err := w.runner.RunTurnPersisted(ctx, job.ConversationID, job.Message)
+			if err != nil {
+				w.publish(job.ConversationID, ports.Event{Type: ports.EventError, Error: "agent error"})
 				return classify(fmt.Errorf("worker: run turn (provider_msg_id=%q): %w", job.ProviderMsgID, err))
 			}
+			w.publishReply(ctx, job.ConversationID, reply)
 			return nil
 		}
 
 		// No provider id (web flow): persist+run via the standard path. The agent
 		// core appends the user message itself in this branch.
-		if _, err := w.runner.RunTurn(ctx, job.ConversationID, job.Message); err != nil {
+		w.publish(job.ConversationID, ports.Event{Type: ports.EventTyping})
+		reply, err := w.runner.RunTurn(ctx, job.ConversationID, job.Message)
+		if err != nil {
+			w.publish(job.ConversationID, ports.Event{Type: ports.EventError, Error: "agent error"})
 			return classify(fmt.Errorf("worker: run turn (conversation=%s): %w", job.ConversationID, err))
 		}
+		w.publishReply(ctx, job.ConversationID, reply)
 		return nil
 	})
 }

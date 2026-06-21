@@ -13,6 +13,7 @@ import (
 	"github.com/angrosist/demo/internal/agent"
 	claudellm "github.com/angrosist/demo/internal/agent/llm/claude"
 	geminillm "github.com/angrosist/demo/internal/agent/llm/gemini"
+	"github.com/angrosist/demo/internal/broker"
 	pgadapter "github.com/angrosist/demo/internal/persistence/postgres"
 	"github.com/angrosist/demo/internal/ports"
 	"github.com/angrosist/demo/internal/queue"
@@ -42,6 +43,11 @@ type Container struct {
 	Worker ports.TurnProcessor
 	// Queue enqueues agent-turn jobs. Selected by QUEUE_PROVIDER (local | cloudtasks).
 	Queue ports.Queue
+	// Broker is the real-time pub/sub seam for conversation events. The chat
+	// use-case and the worker publish to it; the SSE handler (cmd/server) subscribes
+	// to it. In-process (single-instance) today; swap a Redis adapter for multi-
+	// instance prod behind the same port.
+	Broker ports.Broker
 }
 
 var (
@@ -74,9 +80,13 @@ func Init() {
 		// across worker instances). The in-memory locker exists for tests.
 		locker := pgadapter.NewLocker()
 
+		// Real-time event broker (single-instance in-process adapter). The chat
+		// use-case and the worker publish turn events; the SSE handler subscribes.
+		eventBroker := broker.NewInProcess()
+
 		// Async turn processor: lock + idempotency + agent turn. Shared by the
 		// local queue handler and the cmd/worker HTTP endpoint.
-		worker := usecases.NewTurnWorker(runner, locker, msgRepo)
+		worker := usecases.NewTurnWorker(runner, locker, msgRepo, convRepo, eventBroker)
 
 		// Queue selection by QUEUE_PROVIDER. The local adapter binds the processor
 		// as its in-process handler; Cloud Tasks pushes to the worker URL.
@@ -84,11 +94,12 @@ func Init() {
 
 		container = &Container{
 			DB:     &dbPinger{pool: pool},
-			Chat:   usecases.NewChatUseCase(convRepo, runner, locker),
+			Chat:   usecases.NewChatUseCase(convRepo, runner, locker, eventBroker),
 			Leads:  usecases.NewLeadUseCase(leadRepo),
 			Locker: locker,
 			Worker: worker,
 			Queue:  q,
+			Broker: eventBroker,
 		}
 	})
 }

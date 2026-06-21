@@ -76,7 +76,7 @@ func (r *fakeMsgRepo) ClaimProviderMsg(ctx context.Context, conversationID, prov
 // runs the agent turn exactly once.
 func TestTurnWorker_IdempotentByProviderMsgID(t *testing.T) {
 	runner := &fakeRunner{}
-	w := NewTurnWorker(runner, lock.NewMemory(), newFakeMsgRepo())
+	w := NewTurnWorker(runner, lock.NewMemory(), newFakeMsgRepo(), nil, nil)
 
 	job := newProviderJob("conv-1", "wamid.1")
 	for i := 0; i < 3; i++ {
@@ -94,7 +94,7 @@ func TestTurnWorker_IdempotentByProviderMsgID(t *testing.T) {
 // never deduped — today's behavior is preserved.
 func TestTurnWorker_NoProviderIDAlwaysRuns(t *testing.T) {
 	runner := &fakeRunner{}
-	w := NewTurnWorker(runner, lock.NewMemory(), newFakeMsgRepo())
+	w := NewTurnWorker(runner, lock.NewMemory(), newFakeMsgRepo(), nil, nil)
 
 	job := newJob("conv-1", "salut")
 	for i := 0; i < 3; i++ {
@@ -115,7 +115,7 @@ func TestTurnWorker_NoProviderIDAlwaysRuns(t *testing.T) {
 // (the transport should retry).
 func TestTurnWorker_RetryableErrorPropagates(t *testing.T) {
 	runner := &fakeRunner{err: errors.New("llm 503")}
-	w := NewTurnWorker(runner, lock.NewMemory(), newFakeMsgRepo())
+	w := NewTurnWorker(runner, lock.NewMemory(), newFakeMsgRepo(), nil, nil)
 
 	err := w.Process(context.Background(), newJob("conv-1", "x"))
 	if err == nil {
@@ -127,7 +127,7 @@ func TestTurnWorker_RetryableErrorPropagates(t *testing.T) {
 // is logged and acked (not retried).
 func TestTurnWorker_TerminalErrorSwallowed(t *testing.T) {
 	runner := &fakeRunner{err: TerminalError(errors.New("unknown tool"))}
-	w := NewTurnWorker(runner, lock.NewMemory(), newFakeMsgRepo())
+	w := NewTurnWorker(runner, lock.NewMemory(), newFakeMsgRepo(), nil, nil)
 
 	if err := w.Process(context.Background(), newJob("conv-1", "x")); err != nil {
 		t.Fatalf("expected terminal error to be swallowed, got %v", err)
