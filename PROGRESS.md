@@ -3,9 +3,8 @@
 > **This is the file to open to see what's done, what's happening, and what's next.** Updated and committed after every unit of work. The full task list lives in `docs/BUILD_PLAN.md`; this is the running status on top of it.
 
 **Last updated:** 2026-06-21
-**Current milestone:** M3 — Angrosist LIVE + dashboard (in progress)
-**Done:** ANAF→DemoANAF repoint + CAEN→roles ✅ · dashboard scaffold (024/025 + views) ✅ · auth + RBAC + users ✅ · dashboard data API (pipeline/detail/offer/assign/companies/handoffs/kpis, cursor pagination, openapi updated) ✅
-**Next:** frontend dashboard (login + pipeline + lead detail + offer UI + directory + handoff, shadcn) → then Mailer (email) + handoff_to_human tool + GCS FileStore (upload_media).
+**Current milestone:** M3 — Angrosist LIVE + dashboard ✅ (ANAF repoint · auth/RBAC · dashboard API + UI · email + handoff · file upload)
+**Next milestone:** M4 — WhatsApp + PalletClearance + seller photos (blocking) + RO/EN. WhatsApp is gated on Meta Business verification (owner action). Deferred to provisioning: GCS adapter, agent `upload_media` tool + seller-photo blocking gate (M4).
 **Branches:** `main` = the **Vercel demo** (frozen at pre-today `b5d1b3d`, do not push WIP here). `develop` = **active build** (this is where we work). Push auth fixed (gh active account → `victormihaita`).
 
 ---
@@ -17,7 +16,8 @@
 3. ✅ **M0.5 — Demo hardening** — config hygiene, CORS, validation, error boundary, tests _(done; H3→M2)_
 4. ✅ **M1 — Foundation** — refactor done, full Phase-1 schema (009-023, tested), Terraform + CI/CD as code (dormant), local Docker. _ANAF repoint→M3; GCP provisioning + Meta verification = owner actions._
 5. ✅ **M2 — Agent core + web widget** — LLM port + Gemini/Claude adapters, async runtime, SSE widget + typing
-6. ⏳ **M3 — Angrosist + dashboard** — Angrosist LIVE end-to-end _(next)_
+6. ✅ **M3 — Angrosist + dashboard** — Angrosist LIVE end-to-end (verify → lead → email → dashboard → offer/assign → handoff → upload)
+7. ⏳ **M4 — WhatsApp + PalletClearance + photos + i18n** _(next; WhatsApp gated on Meta verification)_
 7. ⬜ **M4 — WhatsApp + PalletClearance + photos + i18n**
 8. ⬜ **M5 — KPIs, GDPR/security, backup, testing, handover**
 9. ⬜ **Phase 2 (M2.1–M2.3)** — SkalYou marketplace
@@ -54,6 +54,7 @@ Legend: ✅ done · ⏳ in progress · ⬜ not started
 
 ## Changelog (newest first)
 
+- **2026-06-21** — **M3 complete.** Dashboard frontend: login + ProtectedRoute + authed client; pipeline (filters + keyset pagination), lead detail (transcript/company/verification/contact) with offer-tracking + assignment; B2B directory, handoff queue, KPI cards; shadcn, code-split. Email + handoff: Mailer port (log/SMTP) + RO/EN templates, confirmation+internal mail on submit, `handoff_to_human` tool (needs_human/bot_active + staff mail + muted-bot guard). File upload: FileStore port (local FS; GCS deferred), DocumentRepo, validated `POST /api/upload`. All real-DB tested.
 - **2026-06-21** — **M3 backend progress.** (1) ANAF→DemoANAF repoint: richer verified company data + CAEN→roles, company_verifications audit row, `ANAF_PROVIDER` selects demoanaf/anaf/demo. (2) Dashboard scaffold: migrations 024 (users.password_hash) + 025 (leads.offer_value/note) + domain view types. (3) Auth + RBAC: bcrypt + HS256 JWT, login, Require/RequireRole middleware, admin bootstrap from env, admin-only users API. (4) Dashboard data API: secured leads pipeline (cursor pagination + filters), lead detail (transcript + typed request + company/verification + contact), offer tracking + assignment (audited), B2B directory, handoff queue, basic KPIs; openapi.yaml updated + validated. All real-DB tested.
 - **2026-06-21** — **M2 complete.** Epic 2.2: Queue port (local + Cloud Tasks push) + `cmd/worker` endpoint + Postgres per-conversation advisory lock + idempotency by provider message ID (real-DB tested). Epic 2.3: in-process SSE `Broker` port + `GET /api/stream` (typing/message/error, heartbeat) publishing from both sync and async paths; frontend `useChat` consumes SSE with a ~1.5s POST fallback (keeps the Vercel demo working). `/api/chat` response unchanged throughout.
 - **2026-06-21** — **M2 Epic 2.1 done.** Split the coupled Gemini runner into a vendor-neutral `LLM` port + agent core (turn loop, tool registry, state machine, RO prompt) + thin Gemini adapter, then added a **Claude/Anthropic adapter** behind the same port. `LLM_PROVIDER` env swaps providers (gemini default, claude for prod); agent core has zero vendor SDK imports (verified). Unit-tested with mock LLM + the Claude mapping helpers.
