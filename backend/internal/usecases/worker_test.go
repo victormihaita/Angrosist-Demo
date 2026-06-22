@@ -131,6 +131,7 @@ func (r *stubConvRepo) UpdateState(context.Context, string, domain.ConversationS
 }
 func (r *stubConvRepo) UpdateExtracted(context.Context, string, map[string]any) error { return nil }
 func (r *stubConvRepo) SetBotActive(context.Context, string, bool) error              { return nil }
+func (r *stubConvRepo) SetContact(context.Context, string, string) error              { return nil }
 func (r *stubConvRepo) GetOrCreateByChannelPhone(context.Context, string, string, string, string) (*domain.Conversation, error) {
 	return r.conv, nil
 }

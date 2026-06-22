@@ -70,6 +70,11 @@ func (c *Core) upsertLeadAndContact(ctx context.Context, conv *domain.Conversati
 	if err := c.contactRepo.Create(ctx, contact); err != nil {
 		return "", false, fmt.Errorf("create contact: %w", err)
 	}
+	// Link the conversation to the contact so the GDPR erasure cascade reaches the
+	// conversation + messages (web conversations are created before the contact).
+	if err := c.convRepo.SetContact(ctx, conv.ID, contact.ID); err != nil {
+		return "", false, fmt.Errorf("link conversation contact: %w", err)
+	}
 	// Capture GDPR consent for the newly created contact (FR-5 / NFR-3). The
 	// conversation channel (web|whatsapp) and the request IP (web only, threaded
 	// via reqmeta) are recorded as proof. Best-effort: a consent-write failure is

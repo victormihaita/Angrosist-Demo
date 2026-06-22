@@ -64,6 +64,7 @@ func (m *mockConvRepo) SetBotActive(ctx context.Context, id string, active bool)
 	m.conv.BotActive = active
 	return nil
 }
+func (m *mockConvRepo) SetContact(ctx context.Context, id, contactID string) error { return nil }
 func (m *mockConvRepo) GetOrCreateByChannelPhone(ctx context.Context, channel, phone, vertical, intent string) (*domain.Conversation, error) {
 	return m.conv, nil
 }

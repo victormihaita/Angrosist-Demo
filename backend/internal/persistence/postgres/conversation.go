@@ -83,6 +83,23 @@ func (r *ConversationRepo) SetBotActive(ctx context.Context, id string, active b
 	return nil
 }
 
+// SetContact links a conversation to its contact (conversations.contact_id).
+// Essential for GDPR right-to-erasure: the contact-keyed cascade reaches the
+// conversation (and its messages) only through this link. Web conversations are
+// created before the contact exists, so the agent back-links on lead submission.
+func (r *ConversationRepo) SetContact(ctx context.Context, id, contactID string) error {
+	tag, err := GetPool().Exec(ctx, `
+		UPDATE conversations SET contact_id = $1::uuid, updated_at = NOW() WHERE id = $2::uuid
+	`, contactID, id)
+	if err != nil {
+		return fmt.Errorf("set contact: %w", err)
+	}
+	if tag.RowsAffected() == 0 {
+		return ports.ErrNotFound
+	}
+	return nil
+}
+
 // GetOrCreateByChannelPhone resolves (or creates) the open conversation for a
 // (channel, phone) pair. The WhatsApp inbound path keys conversations by sender
 // phone: it first looks for the most recent non-failed conversation on the

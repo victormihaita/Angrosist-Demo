@@ -278,14 +278,16 @@ func TestE2E_AngrosistCriticalPath(t *testing.T) {
 	// transcript here lives on the contact-linked conversation, so we assert it is
 	// gone via that linkage.
 	{
-		// Link the lead's conversation to the contact for the cascade. In the demo
-		// chat path the web conversation is created before the contact exists and is
-		// not back-linked, so the contact-keyed cascade would otherwise leave the
-		// transcript. This parameterized fix-up reflects the linkage the erasure
-		// contract assumes (conversations.contact_id) without changing app behavior.
-		if _, err := pool.Exec(ctx,
-			`UPDATE conversations SET contact_id = $1 WHERE id = $2`, contactID, convID); err != nil {
-			t.Fatalf("link conversation to contact: %v", err)
+		// The agent back-links conversations.contact_id on lead submission, so the
+		// contact-keyed cascade reaches the conversation + its messages. Assert that
+		// link exists (no test fix-up) before erasing — it proves the production fix.
+		var linkedContact string
+		if err := pool.QueryRow(ctx,
+			`SELECT contact_id::text FROM conversations WHERE id = $1`, convID).Scan(&linkedContact); err != nil {
+			t.Fatalf("read conversation contact link: %v", err)
+		}
+		if linkedContact != contactID {
+			t.Fatalf("conversation %s not linked to contact %s (got %q)", convID, contactID, linkedContact)
 		}
 
 		// Pre-counts: there must be a transcript to erase.

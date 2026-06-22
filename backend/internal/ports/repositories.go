@@ -22,6 +22,12 @@ type ConversationRepo interface {
 	// turns (FR-6.1/6.3 handoff). Returns ErrNotFound when no such row exists.
 	SetBotActive(ctx context.Context, id string, active bool) error
 
+	// SetContact links a conversation to its contact (conversations.contact_id).
+	// Required for GDPR erasure: the contact-keyed cascade reaches the conversation
+	// + messages only via this link. Web conversations exist before the contact, so
+	// the agent back-links on lead submission. Returns ErrNotFound for no such row.
+	SetContact(ctx context.Context, id, contactID string) error
+
 	// GetOrCreateByChannelPhone resolves the open conversation for a (channel,
 	// phone) pair — the WhatsApp inbound path keys conversations by sender phone.
 	// It returns the most recent open conversation whose linked contact has the

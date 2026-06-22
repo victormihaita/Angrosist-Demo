@@ -40,6 +40,7 @@ func (r *chatConvRepo) UpdateExtracted(ctx context.Context, id string, e map[str
 	return nil
 }
 func (r *chatConvRepo) SetBotActive(ctx context.Context, id string, active bool) error { return nil }
+func (r *chatConvRepo) SetContact(ctx context.Context, id, contactID string) error     { return nil }
 func (r *chatConvRepo) GetOrCreateByChannelPhone(ctx context.Context, channel, phone, vertical, intent string) (*domain.Conversation, error) {
 	return r.CreateWith(ctx, channel, vertical, intent)
 }
