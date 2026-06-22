@@ -61,4 +61,35 @@ func (r *DocumentRepo) ListByOwner(ctx context.Context, ownerType, ownerID strin
 	return out, nil
 }
 
+// CountByOwnerKind returns the number of documents bound to (ownerType, ownerID)
+// with the given kind. It backs the seller-photo blocking gate.
+func (r *DocumentRepo) CountByOwnerKind(ctx context.Context, ownerType, ownerID, kind string) (int, error) {
+	var n int
+	err := GetPool().QueryRow(ctx, `
+		SELECT count(*)
+		FROM documents
+		WHERE owner_type = $1 AND owner_id = $2::uuid AND kind = $3
+	`, ownerType, ownerID, kind).Scan(&n)
+	if err != nil {
+		return 0, fmt.Errorf("count documents (owner=%s/%s kind=%s): %w", ownerType, ownerID, kind, err)
+	}
+	return n, nil
+}
+
+// Reassign re-points every document of the given kind from one owner to another
+// and returns the number of rows moved. Used to attach conversation-scoped seller
+// photos to the durable listing once it is created. All inputs are parameterized.
+func (r *DocumentRepo) Reassign(ctx context.Context, fromOwnerType, fromOwnerID, toOwnerType, toOwnerID, kind string) (int, error) {
+	tag, err := GetPool().Exec(ctx, `
+		UPDATE documents
+		SET owner_type = $3, owner_id = $4::uuid
+		WHERE owner_type = $1 AND owner_id = $2::uuid AND kind = $5
+	`, fromOwnerType, fromOwnerID, toOwnerType, toOwnerID, kind)
+	if err != nil {
+		return 0, fmt.Errorf("reassign documents (%s/%s -> %s/%s kind=%s): %w",
+			fromOwnerType, fromOwnerID, toOwnerType, toOwnerID, kind, err)
+	}
+	return int(tag.RowsAffected()), nil
+}
+
 var _ ports.DocumentRepo = (*DocumentRepo)(nil)

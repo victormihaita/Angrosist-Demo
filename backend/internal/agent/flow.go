@@ -114,8 +114,10 @@ func palletClearanceBuyerFlow() *Flow {
 }
 
 // palletClearanceSellerFlow collects the lot fields and writes a listings row +
-// lead. The seller-photo BLOCKING gate is part A2; here save_lead is a normal
-// submit.
+// lead. Its Submit enforces the seller-photo BLOCKING gate: save_lead refuses to
+// create the listing until at least one photo has been uploaded for the
+// conversation (see Core.submitListing), satisfying the invariant that seller
+// photo upload blocks conversation progress.
 func palletClearanceSellerFlow() *Flow {
 	return &Flow{
 		Vertical: domain.VerticalPalletClearance,

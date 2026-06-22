@@ -110,6 +110,18 @@ type DocumentRepo interface {
 	Create(ctx context.Context, d *domain.Document) error
 	// ListByOwner returns all documents for an owner, newest first.
 	ListByOwner(ctx context.Context, ownerType, ownerID string) ([]*domain.Document, error)
+	// CountByOwnerKind returns the number of documents bound to (ownerType,
+	// ownerID) with the given kind. It backs the PalletClearance seller-photo
+	// blocking gate (count kind='photo' for a conversation before allowing a
+	// listing submit).
+	CountByOwnerKind(ctx context.Context, ownerType, ownerID, kind string) (int, error)
+	// Reassign re-points every document of the given kind from one owner to
+	// another, returning the number of rows moved. It is used by the seller
+	// submit to attach the conversation-scoped photos to the durable listing
+	// (from owner_type='conversation' to owner_type='listing') once the listing
+	// is created. owner ids are soft polymorphic references (no DB FK); the move
+	// is a parameterized UPDATE.
+	Reassign(ctx context.Context, fromOwnerType, fromOwnerID, toOwnerType, toOwnerID, kind string) (int, error)
 }
 
 // ErrNotFound is returned by repository reads/mutations when the addressed row

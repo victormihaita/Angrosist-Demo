@@ -42,6 +42,16 @@ func main() {
 		httputil.HandleOptions(w, r)
 	})
 
+	// Public, conversation-scoped seller-photo upload (M4 PalletClearance): the
+	// widget is public, so this route is UNAUTHENTICATED but scoped to existing
+	// PalletClearance seller conversations (validated in the handler). It backs the
+	// server-side seller-photo blocking gate enforced in the agent seller submit.
+	photos := app.GetContainer().Photos
+	mux.HandleFunc("POST /api/conversations/{id}/photos", photos.Upload)
+	mux.HandleFunc("OPTIONS /api/conversations/{id}/photos", func(w http.ResponseWriter, r *http.Request) {
+		httputil.HandleOptions(w, r)
+	})
+
 	// Local file-serving route so FileStore.URL works in dev/docker. Only wired
 	// for the local-filesystem provider; prod serves private objects via GCS
 	// signed URLs, not this route. Public (no auth) like the served bytes would be

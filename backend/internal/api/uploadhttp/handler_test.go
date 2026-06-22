@@ -60,6 +60,14 @@ func (f *fakeDocRepo) Create(_ context.Context, d *domain.Document) error {
 func (f *fakeDocRepo) ListByOwner(context.Context, string, string) ([]*domain.Document, error) {
 	return f.created, nil
 }
+func (f *fakeDocRepo) CountByOwnerKind(context.Context, string, string, string) (int, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return len(f.created), nil
+}
+func (f *fakeDocRepo) Reassign(context.Context, string, string, string, string, string) (int, error) {
+	return 0, nil
+}
 
 var _ ports.DocumentRepo = (*fakeDocRepo)(nil)
 

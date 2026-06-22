@@ -71,6 +71,12 @@ type Container struct {
 	// /api/upload). Mounted behind the staff auth middleware in cmd/server.
 	Upload *uploadhttp.Service
 
+	// Photos is the PUBLIC, conversation-scoped seller-photo upload service
+	// (POST /api/conversations/{id}/photos). Mounted WITHOUT auth (the widget is
+	// public) but scoped to PalletClearance seller conversations. It backs the
+	// seller-photo blocking gate enforced in the agent seller submit.
+	Photos *uploadhttp.PhotoService
+
 	// FileStore is the binary object-storage seam (localfs in dev/docker, GCS at
 	// provisioning). Selected by FILESTORE_PROVIDER.
 	FileStore ports.FileStore
@@ -102,6 +108,7 @@ func Init() {
 		buyerProfileRepo := pgadapter.NewBuyerProfileRepo()
 		userRepo := pgadapter.NewUserRepo()
 		activityRepo := pgadapter.NewActivityLogRepo()
+		docRepo := pgadapter.NewDocumentRepo()
 		verifier := newVerifier()
 
 		// Auth: HS256 JWT issuer (fail fast if JWT_SECRET is unset) + user repo.
@@ -123,6 +130,7 @@ func Init() {
 			agent.Repos{
 				Listing:      listingRepo,
 				BuyerProfile: buyerProfileRepo,
+				Document:     docRepo,
 			},
 			agent.Notifications{
 				Mailer:      mailer,
@@ -154,8 +162,16 @@ func Init() {
 		// Document storage: FileStore behind the port (localfs in dev/docker, GCS
 		// stub until provisioning) + the document index repo + the upload service.
 		fileStore, localStore := newFileStore()
-		docRepo := pgadapter.NewDocumentRepo()
 		uploadSvc := uploadhttp.NewService(fileStore, docRepo, maxUploadBytes())
+
+		// Public, conversation-scoped seller-photo upload (PalletClearance). It reuses
+		// the same FileStore + DocumentRepo behind the ports, plus a guard that limits
+		// public writes to existing seller conversations. Backs the seller-photo gate.
+		photoSvc := uploadhttp.NewPhotoService(
+			fileStore, docRepo,
+			sellerConversationGuard{conv: convRepo},
+			maxUploadBytes(), maxPhotosPerConversation(),
+		)
 
 		container = &Container{
 			DB:        &dbPinger{pool: pool},
@@ -168,6 +184,7 @@ func Init() {
 			Auth:      authSvc,
 			Dashboard: dashboardhttp.NewService(leadsUC, companiesUC),
 			Upload:    uploadSvc,
+			Photos:    photoSvc,
 			FileStore: fileStore,
 			LocalFS:   localStore,
 		}
@@ -205,6 +222,18 @@ func newFileStore() (ports.FileStore, *localfs.Store) {
 func maxUploadBytes() int64 {
 	if v := os.Getenv("MAX_UPLOAD_BYTES"); v != "" {
 		if n, err := strconv.ParseInt(v, 10, 64); err == nil && n > 0 {
+			return n
+		}
+	}
+	return 0
+}
+
+// maxPhotosPerConversation reads MAX_PHOTOS_PER_CONVERSATION (optional); a
+// non-positive/unset value lets the photo service apply its default per-conversation
+// cap. It limits abuse of the public seller-photo endpoint.
+func maxPhotosPerConversation() int {
+	if v := os.Getenv("MAX_PHOTOS_PER_CONVERSATION"); v != "" {
+		if n, err := strconv.Atoi(v); err == nil && n > 0 {
 			return n
 		}
 	}

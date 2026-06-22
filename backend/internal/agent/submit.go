@@ -153,13 +153,45 @@ func (c *Core) updateExtractedSourcing(ctx context.Context, conv *domain.Convers
 
 // --- PalletClearance seller: listing -----------------------------------------
 
-// submitListing is the PalletClearance seller save_lead path: it writes a
-// listings row (sibling typed request) + the thin lead. The seller-photo BLOCKING
-// gate is part A2; here it is a normal submit.
+// PalletClearance seller-photo gate constants. The widget uploads seller photos
+// scoped to the conversation (owner_type='conversation', kind='photo'); the gate
+// requires at least one before a listing may be created, then re-points the
+// documents to the durable listing. See docs/REQUIREMENTS.md FR-3 and the
+// "seller photo upload blocks conversation progress" invariant.
+const (
+	docOwnerConversation = "conversation"
+	docOwnerListing      = "listing"
+	docKindPhoto         = "photo"
+)
+
+// submitListing is the PalletClearance seller save_lead path. It enforces the
+// seller-photo BLOCKING gate (part A2): BEFORE creating the listing it counts the
+// conversation's photos and refuses to submit when none exist, returning
+// {submitted:false, blocked:"photo_required"} so the agent asks the user to upload
+// one. When at least one photo exists it writes the listings row + thin lead as
+// before, then re-points the conversation-scoped photo documents onto the new
+// listing so they live on the durable record. (The widget seller-photo UI is part
+// B / frontend.)
 func (c *Core) submitListing(ctx context.Context, conv *domain.Conversation, args map[string]any) (map[string]any, error) {
 	if c.listingRepo == nil {
 		return map[string]any{"saved": false, "reason": "listing_repo_unavailable"}, nil
 	}
+
+	// Seller-photo blocking gate: a listing must not be created without a photo.
+	// Without a document repo the gate cannot be enforced; report it rather than
+	// silently bypassing the invariant.
+	if c.documentRepo == nil {
+		return map[string]any{"saved": false, "reason": "document_repo_unavailable"}, nil
+	}
+	photoCount, err := c.documentRepo.CountByOwnerKind(ctx, docOwnerConversation, conv.ID, docKindPhoto)
+	if err != nil {
+		return nil, fmt.Errorf("count seller photos: %w", err)
+	}
+	if photoCount == 0 {
+		// Do NOT create the listing/lead. The agent surfaces this to the user.
+		return map[string]any{"submitted": false, "blocked": "photo_required"}, nil
+	}
+
 	flow := palletClearanceSellerFlow()
 	phone := strArg(args["phone"])
 	email := strArg(args["email"])
@@ -192,6 +224,15 @@ func (c *Core) submitListing(ctx context.Context, conv *domain.Conversation, arg
 	}
 	if err := c.listingRepo.UpsertByLead(ctx, listing); err != nil {
 		return nil, fmt.Errorf("upsert listing: %w", err)
+	}
+
+	// Attach the conversation-scoped seller photos to the durable listing so they
+	// belong to the record staff/buyers see, not just the transient conversation.
+	// A non-fatal failure here must not lose the lead/listing already written.
+	if listing.ID != "" {
+		if _, rerr := c.documentRepo.Reassign(ctx, docOwnerConversation, conv.ID, docOwnerListing, listing.ID, docKindPhoto); rerr != nil {
+			return nil, fmt.Errorf("reassign seller photos to listing: %w", rerr)
+		}
 	}
 
 	c.updateExtractedSeller(ctx, conv, args, phone, email)

@@ -37,13 +37,59 @@ func (m *mockBuyerProfileRepo) Upsert(ctx context.Context, p *domain.BuyerProfil
 	return nil
 }
 
+// mockDocRepo is an in-memory DocumentRepo for the seller-photo gate tests. It
+// tracks photo counts per (ownerType, ownerID, kind) and records reassign calls.
+type mockDocRepo struct {
+	// counts maps "ownerType/ownerID/kind" -> count for CountByOwnerKind.
+	counts    map[string]int
+	created   []*domain.Document
+	reassigns []reassignCall
+}
+
+type reassignCall struct {
+	fromType, fromID, toType, toID, kind string
+}
+
+func newMockDocRepo() *mockDocRepo { return &mockDocRepo{counts: map[string]int{}} }
+
+func docKey(ownerType, ownerID, kind string) string {
+	return ownerType + "/" + ownerID + "/" + kind
+}
+
+func (m *mockDocRepo) Create(ctx context.Context, d *domain.Document) error {
+	d.ID = "doc-1"
+	m.created = append(m.created, d)
+	m.counts[docKey(d.OwnerType, d.OwnerID, d.Kind)]++
+	return nil
+}
+func (m *mockDocRepo) ListByOwner(ctx context.Context, ownerType, ownerID string) ([]*domain.Document, error) {
+	return nil, nil
+}
+func (m *mockDocRepo) CountByOwnerKind(ctx context.Context, ownerType, ownerID, kind string) (int, error) {
+	return m.counts[docKey(ownerType, ownerID, kind)], nil
+}
+func (m *mockDocRepo) Reassign(ctx context.Context, fromOwnerType, fromOwnerID, toOwnerType, toOwnerID, kind string) (int, error) {
+	moved := m.counts[docKey(fromOwnerType, fromOwnerID, kind)]
+	m.counts[docKey(fromOwnerType, fromOwnerID, kind)] = 0
+	m.counts[docKey(toOwnerType, toOwnerID, kind)] += moved
+	m.reassigns = append(m.reassigns, reassignCall{fromOwnerType, fromOwnerID, toOwnerType, toOwnerID, kind})
+	return moved, nil
+}
+
+var _ ports.DocumentRepo = (*mockDocRepo)(nil)
+
 // newFlowCore builds a core wired with the full flow registry + the new repos so
-// the PalletClearance flows can persist.
+// the PalletClearance flows can persist. A nil docs falls back to a fresh empty
+// mockDocRepo (no photos) so the seller-photo gate is exercised by default.
 func newFlowCore(llm ports.LLM, conv *mockConvRepo, msg *mockMsgRepo, comp *mockCompanyRepo,
 	contact *mockContactRepo, lead *mockLeadRepo, sourcing *mockSourcingRepo,
-	listing ports.ListingRepo, buyerProfile ports.BuyerProfileRepo, verifier ports.CompanyDataProvider) *Core {
+	listing ports.ListingRepo, buyerProfile ports.BuyerProfileRepo, docs ports.DocumentRepo,
+	verifier ports.CompanyDataProvider) *Core {
+	if docs == nil {
+		docs = newMockDocRepo()
+	}
 	return NewWithFlows(llm, conv, msg, comp, contact, lead, sourcing, verifier,
-		NewFlowRegistry(), Repos{Listing: listing, BuyerProfile: buyerProfile}, Notifications{})
+		NewFlowRegistry(), Repos{Listing: listing, BuyerProfile: buyerProfile, Document: docs}, Notifications{})
 }
 
 // TestFlowSelection_SellerUsesSellerPromptAndTools asserts a conversation tagged
@@ -57,7 +103,7 @@ func TestFlowSelection_SellerUsesSellerPromptAndTools(t *testing.T) {
 	llm := &scriptedLLM{responses: []*ports.LLMResponse{{Text: "Ce tip de stoc aveți?"}}}
 
 	core := newFlowCore(llm, conv, msg, &mockCompanyRepo{}, &mockContactRepo{},
-		&mockLeadRepo{}, &mockSourcingRepo{}, &mockListingRepo{}, &mockBuyerProfileRepo{}, &mockVerifier{})
+		&mockLeadRepo{}, &mockSourcingRepo{}, &mockListingRepo{}, &mockBuyerProfileRepo{}, nil, &mockVerifier{})
 
 	if _, err := core.RunTurn(context.Background(), "conv-1", "Vreau să vând un lot"); err != nil {
 		t.Fatalf("RunTurn: %v", err)
@@ -82,7 +128,7 @@ func TestFlowSelection_BuyerUsesBuyerPromptAndTools(t *testing.T) {
 	llm := &scriptedLLM{responses: []*ports.LLMResponse{{Text: "Ce categorii vă interesează?"}}}
 
 	core := newFlowCore(llm, conv, msg, &mockCompanyRepo{}, &mockContactRepo{},
-		&mockLeadRepo{}, &mockSourcingRepo{}, &mockListingRepo{}, &mockBuyerProfileRepo{}, &mockVerifier{})
+		&mockLeadRepo{}, &mockSourcingRepo{}, &mockListingRepo{}, &mockBuyerProfileRepo{}, nil, &mockVerifier{})
 
 	if _, err := core.RunTurn(context.Background(), "conv-1", "Caut loturi"); err != nil {
 		t.Fatalf("RunTurn: %v", err)
@@ -106,7 +152,7 @@ func TestFlowSelection_DefaultIsAngrosistBuyer(t *testing.T) {
 	llm := &scriptedLLM{responses: []*ports.LLMResponse{{Text: "Bună!"}}}
 
 	core := newFlowCore(llm, conv, msg, &mockCompanyRepo{}, &mockContactRepo{},
-		&mockLeadRepo{}, &mockSourcingRepo{}, &mockListingRepo{}, &mockBuyerProfileRepo{}, &mockVerifier{})
+		&mockLeadRepo{}, &mockSourcingRepo{}, &mockListingRepo{}, &mockBuyerProfileRepo{}, nil, &mockVerifier{})
 
 	if _, err := core.RunTurn(context.Background(), "conv-1", "Salut"); err != nil {
 		t.Fatalf("RunTurn: %v", err)
@@ -129,6 +175,9 @@ func TestSubmit_SellerWritesListing(t *testing.T) {
 	}}
 	listingRepo := &mockListingRepo{}
 	leadRepo := &mockLeadRepo{}
+	// At least one photo exists for the conversation, so the seller-photo gate opens.
+	docs := newMockDocRepo()
+	docs.counts[docKey(docOwnerConversation, "conv-1", docKindPhoto)] = 1
 
 	llm := &scriptedLLM{responses: []*ports.LLMResponse{
 		{ToolCalls: []ports.ToolCall{{ID: "save_lead", Name: "save_lead", Args: map[string]any{
@@ -141,7 +190,7 @@ func TestSubmit_SellerWritesListing(t *testing.T) {
 	}}
 
 	core := newFlowCore(llm, conv, msg, comp, &mockContactRepo{}, leadRepo,
-		&mockSourcingRepo{}, listingRepo, &mockBuyerProfileRepo{}, &mockVerifier{})
+		&mockSourcingRepo{}, listingRepo, &mockBuyerProfileRepo{}, docs, &mockVerifier{})
 
 	if _, err := core.RunTurn(context.Background(), "conv-1", "Gata, salvează"); err != nil {
 		t.Fatalf("RunTurn: %v", err)
@@ -158,6 +207,62 @@ func TestSubmit_SellerWritesListing(t *testing.T) {
 	}
 	if leadRepo.created[0].Vertical != domain.VerticalPalletClearance || leadRepo.created[0].Intent != domain.IntentSell {
 		t.Fatalf("lead vertical/intent wrong: %+v", leadRepo.created[0])
+	}
+	// The conversation-scoped photo must be re-pointed to the durable listing.
+	if len(docs.reassigns) != 1 {
+		t.Fatalf("expected 1 photo reassign, got %d", len(docs.reassigns))
+	}
+	rc := docs.reassigns[0]
+	if rc.fromType != docOwnerConversation || rc.fromID != "conv-1" ||
+		rc.toType != docOwnerListing || rc.toID != l.ID || rc.kind != docKindPhoto {
+		t.Fatalf("unexpected reassign: %+v", rc)
+	}
+	if n := docs.counts[docKey(docOwnerListing, l.ID, docKindPhoto)]; n != 1 {
+		t.Fatalf("expected 1 photo attached to listing, got %d", n)
+	}
+}
+
+// TestSubmit_SellerBlockedWithoutPhoto asserts the seller-photo BLOCKING gate:
+// with zero photos the save_lead path returns blocked:"photo_required" and creates
+// NO listing and NO lead.
+func TestSubmit_SellerBlockedWithoutPhoto(t *testing.T) {
+	conv := &mockConvRepo{conv: &domain.Conversation{
+		ID: "conv-1", State: domain.StateQualifying, BotActive: true,
+		Vertical: domain.VerticalPalletClearance, Intent: domain.IntentSell,
+	}}
+	msg := &mockMsgRepo{}
+	comp := &mockCompanyRepo{byCUI: map[string]*domain.Company{
+		"12345678": {ID: "company-1", CUI: "12345678", Name: "SELLER SRL", IsActive: true},
+	}}
+	listingRepo := &mockListingRepo{}
+	leadRepo := &mockLeadRepo{}
+	docs := newMockDocRepo() // no photos
+
+	args := map[string]any{
+		"stock_type": "overstock", "category": "alimente", "quantity": float64(10),
+		"unit": "paleți", "location": "Cluj", "country": "RO", "expiry": "2026-12-31",
+		"confidential": true, "cui": "12345678", "company_name": "SELLER SRL",
+		"phone": "0712345678", "email": "vanzator@example.com",
+	}
+
+	core := newFlowCore(&scriptedLLM{}, conv, msg, comp, &mockContactRepo{}, leadRepo,
+		&mockSourcingRepo{}, listingRepo, &mockBuyerProfileRepo{}, docs, &mockVerifier{})
+
+	out, err := core.submitListing(context.Background(), conv.conv, args)
+	if err != nil {
+		t.Fatalf("submitListing: %v", err)
+	}
+	if out["submitted"] != false || out["blocked"] != "photo_required" {
+		t.Fatalf("expected blocked:photo_required, got %+v", out)
+	}
+	if len(listingRepo.upserted) != 0 || len(listingRepo.created) != 0 {
+		t.Fatalf("listing must NOT be created when blocked: %+v", listingRepo)
+	}
+	if len(leadRepo.created) != 0 {
+		t.Fatalf("lead must NOT be created when blocked: %d", len(leadRepo.created))
+	}
+	if len(docs.reassigns) != 0 {
+		t.Fatalf("no reassign expected when blocked: %d", len(docs.reassigns))
 	}
 }
 
@@ -186,7 +291,7 @@ func TestSubmit_BuyerWritesProfile(t *testing.T) {
 	}}
 
 	core := newFlowCore(llm, conv, msg, comp, &mockContactRepo{}, leadRepo,
-		&mockSourcingRepo{}, &mockListingRepo{}, bpRepo, &mockVerifier{})
+		&mockSourcingRepo{}, &mockListingRepo{}, bpRepo, nil, &mockVerifier{})
 
 	if _, err := core.RunTurn(context.Background(), "conv-1", "Gata, salvează"); err != nil {
 		t.Fatalf("RunTurn: %v", err)

@@ -31,7 +31,13 @@ type Core struct {
 	sourcingRepo     ports.SourcingRepo
 	listingRepo      ports.ListingRepo
 	buyerProfileRepo ports.BuyerProfileRepo
-	verifier         ports.CompanyDataProvider
+	// documentRepo backs the PalletClearance seller-photo BLOCKING gate: the seller
+	// submit counts kind='photo' documents for the conversation before creating a
+	// listing, and re-points them onto the listing afterwards. It is optional in
+	// legacy/test wirings (nil); when nil the seller submit treats the gate as
+	// unconfigured rather than blocking, but the production wiring always sets it.
+	documentRepo ports.DocumentRepo
+	verifier     ports.CompanyDataProvider
 
 	// flows resolves the active Flow per conversation (vertical, intent). When nil
 	// (legacy/test wirings that pass only the positional repos), the core falls
@@ -67,6 +73,10 @@ type Notifications struct {
 type Repos struct {
 	Listing      ports.ListingRepo
 	BuyerProfile ports.BuyerProfileRepo
+	// Document backs the PalletClearance seller-photo blocking gate (count + reassign
+	// of kind='photo' documents). Optional: when nil the seller submit cannot enforce
+	// the gate and reports it as unconfigured.
+	Document ports.DocumentRepo
 }
 
 // New constructs the agent core with the LLM port and the repository/service
@@ -141,6 +151,7 @@ func NewWithFlows(
 		sourcingRepo:     sourcingRepo,
 		listingRepo:      repos.Listing,
 		buyerProfileRepo: repos.BuyerProfile,
+		documentRepo:     repos.Document,
 		verifier:         verifier,
 		flows:            flows,
 		mailer:           n.Mailer,
