@@ -59,21 +59,38 @@ func (c *Client) Verify(ctx context.Context, cui string) (*domain.Company, error
 	return c.callANAF(ctx, cuiInt)
 }
 
-// demoCompany returns a deterministic placeholder company for demo mode.
+// demoCompany returns a deterministic, fully-populated placeholder company for
+// demo mode so the OFFLINE demo (ANAF_DEMO_MODE=true) renders a complete company
+// detail page: VAT status, ONRC identity, administrators, derived roles, and a
+// few years of financials. Shared by both the raw-ANAF and DemoANAF adapters.
 func demoCompany(cui int) *domain.Company {
 	raw, _ := json.Marshal(map[string]any{"demo": true, "cui": cui})
 	cuiStr := fmt.Sprintf("%d", cui)
+	regDate := time.Date(2015, time.March, 12, 0, 0, 0, 0, time.UTC)
+	f := func(v float64) *float64 { return &v }
+	n := func(v int) *int { return &v }
 	return &domain.Company{
-		CUI:             cuiStr,
-		Country:         "RO",
-		RegNo:           cuiStr,
-		Name:            "Demo Company SRL",
-		Address:         "Str. Exemplu, Nr. 1",
-		County:          "București",
-		IsActive:        true,
-		VATStatus:       "active",
-		CAEN:            "4690",
-		Roles:           caen.RolesForCAEN("4690"),
+		CUI:                cuiStr,
+		Country:            "RO",
+		RegNo:              cuiStr,
+		RegistrationNumber: "J40/1234/2015",
+		RegistrationDate:   &regDate,
+		LegalForm:          "SRL",
+		EFactura:           true,
+		Name:               "Demo Company SRL",
+		Address:            "Str. Exemplu, Nr. 1",
+		County:             "București",
+		IsActive:           true,
+		VATStatus:          "active",
+		CAEN:               "4690",
+		AuthorizedCAEN:     []string{"4690", "4711"},
+		Roles:              caen.RolesForCAEN("4690", "4711"),
+		Administrators:     []string{"Ion Popescu", "Maria Ionescu"},
+		Financials: []domain.CompanyFinancialYear{
+			{Year: 2024, Turnover: f(12500000), NetProfit: f(1450000), Employees: n(48), CAENDescription: "Comerț cu ridicata nespecializat"},
+			{Year: 2023, Turnover: f(10200000), NetProfit: f(1100000), Employees: n(41), CAENDescription: "Comerț cu ridicata nespecializat"},
+			{Year: 2022, Turnover: f(8700000), NetProfit: f(820000), Employees: n(35), CAENDescription: "Comerț cu ridicata nespecializat"},
+		},
 		RawData:         raw,
 		RawVerification: raw,
 	}

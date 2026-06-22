@@ -28,6 +28,14 @@ type Company struct {
 	// Distinct from RegNo/CUI; informational, not a dedup key.
 	RegistrationNumber string
 
+	// RegistrationDate is the company's incorporation date ("when created") from
+	// ONRC. Nil when the provider does not supply it (foreign / unverified companies).
+	RegistrationDate *time.Time
+	// LegalForm is the legal form (e.g. "SRL", "SA", "PFA"). Empty when unknown.
+	LegalForm string
+	// EFactura reports whether the company is registered for e-Factura (e-invoicing).
+	EFactura bool
+
 	Address string
 	County  string
 
@@ -50,6 +58,11 @@ type Company struct {
 	// Administrators are the company's administrators' names (from ONRC), when available.
 	Administrators []string
 
+	// Financials are the company's multi-year financial snapshots (turnover, net
+	// profit, employees), newest year first when populated by the provider. Empty
+	// when financials enrichment is disabled or the lookup failed (best-effort).
+	Financials []CompanyFinancialYear
+
 	// RawData is the full raw provider payload kept on the company row (back-compat
 	// with the demo's companies.raw_data column).
 	RawData []byte
@@ -60,4 +73,20 @@ type Company struct {
 
 	VerifiedAt *time.Time
 	CreatedAt  time.Time
+}
+
+// CompanyFinancialYear is a single year's financial snapshot for a company, as
+// supplied by the verification provider's financials endpoint. All money/count
+// fields are pointers so "not reported" (nil) is distinct from a genuine zero.
+type CompanyFinancialYear struct {
+	// Year is the fiscal year (e.g. 2024).
+	Year int
+	// Turnover is net turnover (DemoANAF indicator I13), in RON.
+	Turnover *float64
+	// NetProfit is net profit for the year (DemoANAF I18 profit minus I19 loss), in RON.
+	NetProfit *float64
+	// Employees is the average number of employees (DemoANAF indicator I20).
+	Employees *int
+	// CAENDescription is the human-readable primary activity for that year, when supplied.
+	CAENDescription string
 }

@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"testing"
+	"time"
 
 	"github.com/angrosist/demo/internal/domain"
 )
@@ -113,6 +114,107 @@ func TestCompanyUpsert_MinimalNoVerification(t *testing.T) {
 	if n := countVerifications(t, c.ID); n != 0 {
 		t.Fatalf("minimal upsert should write no verification row, got %d", n)
 	}
+}
+
+// TestCompanyUpsert_EnrichedFieldsAndFinancials exercises the migration-027
+// columns and the company_financials sidecar: Upsert persists registration
+// number/date, legal form, e-Factura and one row per financial year; re-upsert
+// updates the years in place (no duplicates); Detail returns them with a
+// populated vat_status.
+func TestCompanyUpsert_EnrichedFieldsAndFinancials(t *testing.T) {
+	requireDB(t)
+	ctx := context.Background()
+	repo := NewCompanyRepo()
+
+	regNo := "77778888"
+	cleanupCompany(t, "RO", regNo)
+
+	regDate := time.Date(2015, time.March, 12, 0, 0, 0, 0, time.UTC)
+	f := func(v float64) *float64 { return &v }
+	n := func(v int) *int { return &v }
+	raw := json.RawMessage(`{"name":"ENRICHED SRL"}`)
+	c := &domain.Company{
+		CUI: regNo, Country: "RO", RegNo: regNo, Name: "Enriched Srl",
+		IsActive: true, VATStatus: "active", CAEN: "4690",
+		Roles:              []string{"buyer", "wholesaler"},
+		RegistrationNumber: "J40/1234/2015",
+		RegistrationDate:   &regDate,
+		LegalForm:          "SRL",
+		EFactura:           true,
+		Administrators:     []string{"Ion Popescu"},
+		RawData:            raw,
+		RawVerification:    raw,
+		Financials: []domain.CompanyFinancialYear{
+			{Year: 2024, Turnover: f(12500000), NetProfit: f(1450000), Employees: n(48), CAENDescription: "Comerț cu ridicata"},
+			{Year: 2023, Turnover: f(10200000), NetProfit: f(-300000), Employees: n(41)},
+		},
+	}
+	if err := repo.Upsert(ctx, c); err != nil {
+		t.Fatalf("upsert: %v", err)
+	}
+
+	if got := countFinancials(t, c.ID); got != 2 {
+		t.Fatalf("expected 2 financial rows, got %d", got)
+	}
+
+	// Re-upsert with an updated 2024 figure plus a new 2025 year.
+	c.Financials = []domain.CompanyFinancialYear{
+		{Year: 2024, Turnover: f(13000000), NetProfit: f(1500000), Employees: n(50)},
+		{Year: 2025, Turnover: f(15000000), NetProfit: f(1700000), Employees: n(55)},
+	}
+	if err := repo.Upsert(ctx, c); err != nil {
+		t.Fatalf("re-upsert: %v", err)
+	}
+	if got := countFinancials(t, c.ID); got != 3 {
+		t.Fatalf("expected 3 financial rows after re-upsert (2023,2024,2025), got %d", got)
+	}
+
+	d, err := repo.Detail(ctx, c.ID)
+	if err != nil {
+		t.Fatalf("Detail: %v", err)
+	}
+	if d.VATStatus != "active" {
+		t.Errorf("Detail VATStatus = %q; want active", d.VATStatus)
+	}
+	if d.RegistrationNumber != "J40/1234/2015" {
+		t.Errorf("RegistrationNumber = %q; want J40/1234/2015", d.RegistrationNumber)
+	}
+	if d.RegistrationDate == nil || d.RegistrationDate.Year() != 2015 {
+		t.Errorf("RegistrationDate = %v; want 2015", d.RegistrationDate)
+	}
+	if d.LegalForm != "SRL" || !d.EFactura {
+		t.Errorf("LegalForm/EFactura = %q/%v; want SRL/true", d.LegalForm, d.EFactura)
+	}
+	if len(d.Administrators) != 1 || d.Administrators[0] != "Ion Popescu" {
+		t.Errorf("Administrators = %v; want [Ion Popescu]", d.Administrators)
+	}
+	if len(d.Financials) != 3 {
+		t.Fatalf("Detail.Financials = %d; want 3", len(d.Financials))
+	}
+	// Newest first, and 2024 updated in place.
+	if d.Financials[0].Year != 2025 {
+		t.Errorf("first financial year = %d; want 2025 (DESC)", d.Financials[0].Year)
+	}
+	var y2024 *domain.CompanyFinancialView
+	for i := range d.Financials {
+		if d.Financials[i].Year == 2024 {
+			y2024 = &d.Financials[i]
+		}
+	}
+	if y2024 == nil || y2024.Turnover == nil || *y2024.Turnover != 13000000 {
+		t.Errorf("2024 turnover not updated in place: %+v", y2024)
+	}
+}
+
+func countFinancials(t *testing.T, companyID string) int {
+	t.Helper()
+	var n int
+	if err := GetPool().QueryRow(context.Background(),
+		`SELECT count(*) FROM company_financials WHERE company_id = $1`,
+		companyID).Scan(&n); err != nil {
+		t.Fatalf("count financials: %v", err)
+	}
+	return n
 }
 
 func cleanupCompany(t *testing.T, country, regNo string) {

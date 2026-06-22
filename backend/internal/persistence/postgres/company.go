@@ -93,29 +93,40 @@ func (r *CompanyRepo) Upsert(ctx context.Context, c *domain.Company) error {
 		err := tx.QueryRow(ctx, `
 			INSERT INTO companies
 				(cui, country, reg_no, name, address, county, is_active,
-				 vat_status, caen, roles, raw_data, verified_at, updated_at)
-			VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, NOW(), NOW())
+				 vat_status, caen, roles, registration_number, registration_date,
+				 legal_form, e_factura, raw_data, verified_at, updated_at)
+			VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, NOW(), NOW())
 			ON CONFLICT (country, reg_no) DO UPDATE SET
-				cui         = EXCLUDED.cui,
-				name        = EXCLUDED.name,
-				address     = EXCLUDED.address,
-				county      = EXCLUDED.county,
-				is_active   = EXCLUDED.is_active,
-				vat_status  = EXCLUDED.vat_status,
-				caen        = EXCLUDED.caen,
-				roles       = EXCLUDED.roles,
-				raw_data    = EXCLUDED.raw_data,
-				verified_at = NOW(),
-				updated_at  = NOW()
+				cui                 = EXCLUDED.cui,
+				name                = EXCLUDED.name,
+				address             = EXCLUDED.address,
+				county              = EXCLUDED.county,
+				is_active           = EXCLUDED.is_active,
+				vat_status          = EXCLUDED.vat_status,
+				caen                = EXCLUDED.caen,
+				roles               = EXCLUDED.roles,
+				registration_number = EXCLUDED.registration_number,
+				registration_date   = EXCLUDED.registration_date,
+				legal_form          = EXCLUDED.legal_form,
+				e_factura           = EXCLUDED.e_factura,
+				raw_data            = EXCLUDED.raw_data,
+				verified_at         = NOW(),
+				updated_at          = NOW()
 			RETURNING id
 		`,
 			cui, country, regNo, c.Name, c.Address, c.County, c.IsActive,
-			nullStr(c.VATStatus), nullStr(c.CAEN), roles, nullBytes(c.RawData),
+			nullStr(c.VATStatus), nullStr(c.CAEN), roles,
+			nullStr(c.RegistrationNumber), nullTime(c.RegistrationDate),
+			nullStr(c.LegalForm), c.EFactura, nullBytes(c.RawData),
 		).Scan(&companyID)
 		if err != nil {
 			return fmt.Errorf("upsert company (%s/%s): %w", country, regNo, err)
 		}
 		c.ID = companyID
+
+		if err := upsertFinancials(ctx, tx, companyID, c.Financials); err != nil {
+			return fmt.Errorf("upsert financials (%s/%s): %w", country, regNo, err)
+		}
 
 		if !hasVerificationData(c) {
 			return nil
@@ -158,6 +169,45 @@ func insertVerification(ctx context.Context, tx pgx.Tx, companyID string, c *dom
 		VALUES ($1, 'demoanaf', $2, $3, $4, NOW())
 	`, companyID, nullStr(c.VATStatus), admins, raw)
 	return err
+}
+
+// upsertFinancials idempotently writes one company_financials row per year from
+// the company's provider-supplied snapshots. It is keyed on (company_id, year)
+// (UNIQUE, migration 014): an existing year is updated in place, never duplicated.
+// An empty slice is a no-op so the save_lead recovery path writes nothing.
+func upsertFinancials(ctx context.Context, tx pgx.Tx, companyID string, years []domain.CompanyFinancialYear) error {
+	for _, y := range years {
+		if y.Year <= 0 {
+			continue
+		}
+		raw, err := json.Marshal(y)
+		if err != nil {
+			return fmt.Errorf("marshal financial %d: %w", y.Year, err)
+		}
+		_, err = tx.Exec(ctx, `
+			INSERT INTO company_financials
+				(company_id, year, turnover, net_profit, employees, raw)
+			VALUES ($1, $2, $3, $4, $5, $6)
+			ON CONFLICT (company_id, year) DO UPDATE SET
+				turnover   = EXCLUDED.turnover,
+				net_profit = EXCLUDED.net_profit,
+				employees  = EXCLUDED.employees,
+				raw        = EXCLUDED.raw
+		`, companyID, y.Year, y.Turnover, y.NetProfit, y.Employees, raw)
+		if err != nil {
+			return fmt.Errorf("upsert financial year %d: %w", y.Year, err)
+		}
+	}
+	return nil
+}
+
+// nullTime renders a nil *time.Time as SQL NULL and a non-nil one as its value,
+// so a missing incorporation date is stored as NULL rather than the zero time.
+func nullTime(t *time.Time) any {
+	if t == nil {
+		return nil
+	}
+	return *t
 }
 
 // ListPage returns one keyset page of directory companies matching the filter.
@@ -252,6 +302,10 @@ func (r *CompanyRepo) Detail(ctx context.Context, id string) (*domain.CompanyDet
 			COALESCE(c.address, ''),
 			COALESCE(c.county, ''),
 			c.is_active,
+			COALESCE(c.registration_number, ''),
+			c.registration_date,
+			COALESCE(c.legal_form, ''),
+			COALESCE(c.e_factura, false),
 			cv.source, cv.vat_status, cv.administrators, cv.checked_at
 		FROM companies c
 		LEFT JOIN LATERAL (
@@ -270,6 +324,7 @@ func (r *CompanyRepo) Detail(ctx context.Context, id string) (*domain.CompanyDet
 	if err := row.Scan(
 		&d.ID, &d.Name, &d.CUI, &d.Country, &d.RegNo, &d.CAEN, &d.VATStatus,
 		&d.Roles, &d.CreatedAt, &d.Address, &d.County, &d.IsActive,
+		&d.RegistrationNumber, &d.RegistrationDate, &d.LegalForm, &d.EFactura,
 		&vSource, &vVAT, &vAdmins, &vChecked,
 	); err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
@@ -287,11 +342,17 @@ func (r *CompanyRepo) Detail(ctx context.Context, id string) (*domain.CompanyDet
 		}
 		if len(vAdmins) > 0 {
 			ver.Administrators = append([]byte(nil), vAdmins...)
+			d.Administrators = decodeAdminNames(vAdmins)
 		}
 		if vChecked != nil {
 			ver.CheckedAt = *vChecked
 		}
 		d.Verification = ver
+	}
+	// Ensure vat_status is populated on the response: prefer the company column,
+	// fall back to the latest verification's value when the column is empty.
+	if d.VATStatus == "" && vVAT != nil {
+		d.VATStatus = *vVAT
 	}
 
 	fin, err := r.financials(ctx, d.ID)
@@ -302,11 +363,12 @@ func (r *CompanyRepo) Detail(ctx context.Context, id string) (*domain.CompanyDet
 	return &d, nil
 }
 
-// financials returns the company's turnover snapshots (newest year first), or an
-// empty slice when none exist (company_financials, migration 014).
+// financials returns the company's financial snapshots (newest year first), or
+// an empty slice when none exist (company_financials, migrations 014 + 027). The
+// per-year CAEN description is recovered from the stored raw payload when present.
 func (r *CompanyRepo) financials(ctx context.Context, companyID string) ([]domain.CompanyFinancialView, error) {
 	rows, err := GetPool().Query(ctx, `
-		SELECT year, turnover
+		SELECT year, turnover, net_profit, employees, raw
 		FROM company_financials
 		WHERE company_id = $1::uuid
 		ORDER BY year DESC
@@ -319,12 +381,32 @@ func (r *CompanyRepo) financials(ctx context.Context, companyID string) ([]domai
 	var out []domain.CompanyFinancialView
 	for rows.Next() {
 		var v domain.CompanyFinancialView
-		if err := rows.Scan(&v.Year, &v.Turnover); err != nil {
+		var raw []byte
+		if err := rows.Scan(&v.Year, &v.Turnover, &v.NetProfit, &v.Employees, &raw); err != nil {
 			return nil, fmt.Errorf("scan financial: %w", err)
+		}
+		if len(raw) > 0 {
+			var probe struct {
+				CAENDescription string `json:"CAENDescription"`
+			}
+			if err := json.Unmarshal(raw, &probe); err == nil {
+				v.CAENDescription = probe.CAENDescription
+			}
 		}
 		out = append(out, v)
 	}
 	return out, rows.Err()
+}
+
+// decodeAdminNames decodes the company_verifications.administrators JSONB (a JSON
+// array of names, as written by insertVerification) into a slice. It returns nil
+// on any decode error so a malformed payload never fails the detail query.
+func decodeAdminNames(b []byte) []string {
+	var names []string
+	if err := json.Unmarshal(b, &names); err != nil {
+		return nil
+	}
+	return names
 }
 
 var _ ports.CompanyRepo = (*CompanyRepo)(nil)

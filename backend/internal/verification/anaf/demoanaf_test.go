@@ -4,6 +4,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"reflect"
+	"strings"
 	"testing"
 )
 
@@ -152,5 +153,189 @@ func TestDemoANAF_demoMode(t *testing.T) {
 	}
 	if len(company.Roles) == 0 {
 		t.Error("demo company should carry derived roles")
+	}
+	// The offline demo must render a complete page: VAT, ONRC identity, financials.
+	if company.VATStatus != "active" {
+		t.Errorf("demo VATStatus = %q; want active", company.VATStatus)
+	}
+	if company.RegistrationDate == nil {
+		t.Error("demo company should carry a registration date")
+	}
+	if company.LegalForm != "SRL" {
+		t.Errorf("demo LegalForm = %q; want SRL", company.LegalForm)
+	}
+	if len(company.Administrators) == 0 {
+		t.Error("demo company should carry administrators")
+	}
+	if len(company.Financials) < 2 {
+		t.Errorf("demo company should carry multiple financial years, got %d", len(company.Financials))
+	} else {
+		f := company.Financials[0]
+		if f.Turnover == nil || f.NetProfit == nil || f.Employees == nil {
+			t.Error("demo financial year should carry turnover/net profit/employees")
+		}
+	}
+}
+
+// demoANAFFinancialsBody is a representative /company/:cui/financials response
+// with two years of indicators (net turnover I13, profit I18, loss I19, employees I20).
+const demoANAFFinancialsBody = `{
+  "success": true,
+  "data": [
+    {
+      "year": 2024,
+      "caenCode": "4791",
+      "caenDescription": "Comerț cu amănuntul prin internet",
+      "indicators": [
+        {"code": "I13", "value": "12500000"},
+        {"code": "I18", "value": "1450000"},
+        {"code": "I19", "value": "0"},
+        {"code": "I20", "value": "48"}
+      ]
+    },
+    {
+      "year": 2023,
+      "caenCode": "4791",
+      "caenDescription": "Comerț cu amănuntul prin internet",
+      "indicators": [
+        {"code": "I13", "value": "10200000"},
+        {"code": "I18", "value": "0"},
+        {"code": "I19", "value": "300000"},
+        {"code": "I20", "value": "41"}
+      ]
+    }
+  ],
+  "meta": {"financialsCoveredYears": 2}
+}`
+
+// newDemoANAFTestServer serves the core /company/:cui body and, when financials
+// is non-empty, the /financials body; otherwise /financials returns finStatus.
+func newDemoANAFTestServer(t *testing.T, core, financials string, finStatus int) (*httptest.Server, *int) {
+	t.Helper()
+	var finCalls int
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		if strings.HasSuffix(r.URL.Path, "/financials") {
+			finCalls++
+			if financials == "" {
+				w.WriteHeader(finStatus)
+				return
+			}
+			_, _ = w.Write([]byte(financials))
+			return
+		}
+		_, _ = w.Write([]byte(core))
+	}))
+	return srv, &finCalls
+}
+
+func TestVerify_withFinancials(t *testing.T) {
+	srv, finCalls := newDemoANAFTestServer(t, demoANAFBody, demoANAFFinancialsBody, 0)
+	defer srv.Close()
+
+	c := &DemoANAFClient{baseURL: srv.URL, httpClient: srv.Client(), fetchFinancials: true}
+	company, err := c.Verify(t.Context(), "14399840")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if *finCalls != 1 {
+		t.Fatalf("expected 1 financials call, got %d", *finCalls)
+	}
+	if len(company.Financials) != 2 {
+		t.Fatalf("Financials = %d years; want 2", len(company.Financials))
+	}
+	// Newest first.
+	y0 := company.Financials[0]
+	if y0.Year != 2024 {
+		t.Errorf("first year = %d; want 2024 (newest first)", y0.Year)
+	}
+	if y0.Turnover == nil || *y0.Turnover != 12500000 {
+		t.Errorf("2024 turnover = %v; want 12500000", y0.Turnover)
+	}
+	if y0.NetProfit == nil || *y0.NetProfit != 1450000 {
+		t.Errorf("2024 net profit = %v; want 1450000", y0.NetProfit)
+	}
+	if y0.Employees == nil || *y0.Employees != 48 {
+		t.Errorf("2024 employees = %v; want 48", y0.Employees)
+	}
+	y1 := company.Financials[1]
+	if y1.NetProfit == nil || *y1.NetProfit != -300000 {
+		t.Errorf("2023 net profit = %v; want -300000 (profit I18=0 minus loss I19=300000)", y1.NetProfit)
+	}
+	if y1.CAENDescription == "" {
+		t.Error("2023 caen description should be populated")
+	}
+}
+
+func TestVerify_richCoreFields(t *testing.T) {
+	const core = `{"success":true,"data":{
+		"cui":14399840,"name":"DANTE INTERNATIONAL SA","registrationNumber":"J40/372/2002",
+		"registrationDate":"2002-02-15","legalForm":"SA","eFacturaRegistered":true,
+		"vatRegistered":true,"vatStatus":"active","inactive":false,"caenCode":"4791"
+	}}`
+	srv, _ := newDemoANAFTestServer(t, core, "", http.StatusNotFound)
+	defer srv.Close()
+
+	c := &DemoANAFClient{baseURL: srv.URL, httpClient: srv.Client(), fetchFinancials: true}
+	company, err := c.Verify(t.Context(), "14399840")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if company.LegalForm != "SA" {
+		t.Errorf("LegalForm = %q; want SA", company.LegalForm)
+	}
+	if !company.EFactura {
+		t.Error("EFactura should be true")
+	}
+	if company.RegistrationDate == nil || company.RegistrationDate.Year() != 2002 {
+		t.Errorf("RegistrationDate = %v; want 2002-02-15", company.RegistrationDate)
+	}
+}
+
+func TestVerify_financials404_doesNotFail(t *testing.T) {
+	srv, finCalls := newDemoANAFTestServer(t, demoANAFBody, "", http.StatusNotFound)
+	defer srv.Close()
+
+	c := &DemoANAFClient{baseURL: srv.URL, httpClient: srv.Client(), fetchFinancials: true}
+	company, err := c.Verify(t.Context(), "14399840")
+	if err != nil {
+		t.Fatalf("Verify must succeed despite financials 404, got %v", err)
+	}
+	if *finCalls != 1 {
+		t.Fatalf("expected 1 financials call, got %d", *finCalls)
+	}
+	if len(company.Financials) != 0 {
+		t.Errorf("Financials should be empty on 404, got %d", len(company.Financials))
+	}
+}
+
+func TestVerify_financials5xx_doesNotFail(t *testing.T) {
+	srv, _ := newDemoANAFTestServer(t, demoANAFBody, "", http.StatusBadGateway)
+	defer srv.Close()
+
+	c := &DemoANAFClient{baseURL: srv.URL, httpClient: srv.Client(), fetchFinancials: true}
+	company, err := c.Verify(t.Context(), "14399840")
+	if err != nil {
+		t.Fatalf("Verify must succeed despite financials 5xx, got %v", err)
+	}
+	if len(company.Financials) != 0 {
+		t.Errorf("Financials should be empty on 5xx, got %d", len(company.Financials))
+	}
+}
+
+func TestVerify_financialsDisabled_noCall(t *testing.T) {
+	srv, finCalls := newDemoANAFTestServer(t, demoANAFBody, demoANAFFinancialsBody, 0)
+	defer srv.Close()
+
+	c := &DemoANAFClient{baseURL: srv.URL, httpClient: srv.Client(), fetchFinancials: false}
+	company, err := c.Verify(t.Context(), "14399840")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if *finCalls != 0 {
+		t.Fatalf("financials must not be called when disabled, got %d calls", *finCalls)
+	}
+	if len(company.Financials) != 0 {
+		t.Errorf("Financials should be empty when disabled, got %d", len(company.Financials))
 	}
 }

@@ -33,10 +33,13 @@ type CompanyFilter struct {
 	After   *Cursor // keyset position; nil = first page
 }
 
-// CompanyFinancialView is one year's turnover snapshot embedded in a CompanyDetail.
+// CompanyFinancialView is one year's financial snapshot embedded in a CompanyDetail.
 type CompanyFinancialView struct {
-	Year     int      `json:"year"`
-	Turnover *float64 `json:"turnover"`
+	Year            int      `json:"year"`
+	Turnover        *float64 `json:"turnover"`
+	NetProfit       *float64 `json:"net_profit"`
+	Employees       *int     `json:"employees"`
+	CAENDescription string   `json:"caen_description,omitempty"`
 }
 
 // CompanySummary is the directory list-view projection.
@@ -53,12 +56,26 @@ type CompanySummary struct {
 }
 
 // CompanyDetail is the directory detail view: the summary plus address/county,
-// the latest verification, and any financial-year snapshots.
+// the richer ONRC identity fields, administrators, the latest verification, and
+// any financial-year snapshots.
 type CompanyDetail struct {
 	CompanySummary
-	Address      string                   `json:"address"`
-	County       string                   `json:"county"`
-	IsActive     bool                     `json:"is_active"`
+	Address string `json:"address"`
+	County  string `json:"county"`
+	// RegistrationNumber is the ONRC J-number (e.g. "J40/372/2002").
+	RegistrationNumber string `json:"registration_number,omitempty"`
+	// RegistrationDate is the incorporation date, omitted when unknown.
+	RegistrationDate *time.Time `json:"registration_date,omitempty"`
+	// LegalForm is the legal form (SA / SRL / ...).
+	LegalForm string `json:"legal_form,omitempty"`
+	// EFactura reports e-Factura (e-invoicing) registration.
+	EFactura bool `json:"e_factura"`
+	// AuthorizedCAEN holds all permitted activity codes when available.
+	AuthorizedCAEN []string `json:"authorized_caen,omitempty"`
+	// Administrators are the company's administrators' names (from the latest verification).
+	Administrators []string `json:"administrators,omitempty"`
+	IsActive       bool     `json:"is_active"`
+
 	Verification *CompanyVerificationView `json:"verification,omitempty"`
 	Financials   []CompanyFinancialView   `json:"financials,omitempty"`
 }
