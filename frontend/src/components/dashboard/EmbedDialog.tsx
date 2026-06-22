@@ -18,14 +18,28 @@ const embedCode = `<!-- Euro Intermed Chat Widget -->
   AngrosistChat.init({ apiUrl: '${API_URL}' });
 </script>`
 
+// Optional PalletClearance seller variant — vertical/intent default to
+// angrosist/buy when omitted, so the snippet above keeps existing embeds working.
+const sellerEmbedCode = `<!-- PalletClearance — flux vânzător (cu fotografii) -->
+<script src="${WIDGET_URL}"></script>
+<script>
+  AngrosistChat.init({
+    apiUrl: '${API_URL}',
+    vertical: 'palletclearance',
+    intent: 'sell'
+  });
+</script>`
+
 export function EmbedDialog() {
   const [open, setOpen] = useState(false)
-  const [copied, setCopied] = useState(false)
+  const [copied, setCopied] = useState<'default' | 'seller' | null>(null)
 
-  function copy() {
-    navigator.clipboard.writeText(embedCode)
-    setCopied(true)
-    setTimeout(() => setCopied(false), 2000)
+  function copy(which: 'default' | 'seller') {
+    navigator.clipboard.writeText(
+      which === 'seller' ? sellerEmbedCode : embedCode,
+    )
+    setCopied(which)
+    setTimeout(() => setCopied(null), 2000)
   }
 
   return (
@@ -52,9 +66,9 @@ export function EmbedDialog() {
               variant="ghost"
               size="icon"
               className="absolute top-2 right-2 h-7 w-7"
-              onClick={copy}
+              onClick={() => copy('default')}
             >
-              {copied
+              {copied === 'default'
                 ? <Check className="h-3.5 w-3.5 text-green-500" />
                 : <Copy className="h-3.5 w-3.5" />}
             </Button>
@@ -63,6 +77,31 @@ export function EmbedDialog() {
           <p className="text-xs text-muted-foreground mt-1">
             Widgetul apare ca un buton de chat în colțul din dreapta-jos al paginii.
           </p>
+
+          <div className="mt-4">
+            <p className="text-xs font-medium mb-1.5">
+              Variantă vânzător PalletClearance (cu încărcare fotografii)
+            </p>
+            <div className="relative">
+              <pre className="bg-muted rounded-lg p-4 pr-10 text-xs leading-relaxed whitespace-pre-wrap break-all">
+                {sellerEmbedCode}
+              </pre>
+              <Button
+                variant="ghost"
+                size="icon"
+                className="absolute top-2 right-2 h-7 w-7"
+                onClick={() => copy('seller')}
+              >
+                {copied === 'seller'
+                  ? <Check className="h-3.5 w-3.5 text-green-500" />
+                  : <Copy className="h-3.5 w-3.5" />}
+              </Button>
+            </div>
+            <p className="text-xs text-muted-foreground mt-1">
+              <code>vertical</code> și <code>intent</code> sunt opționale —
+              implicit <code>angrosist</code>/<code>buy</code>.
+            </p>
+          </div>
         </DialogContent>
       </Dialog>
     </>

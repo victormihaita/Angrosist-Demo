@@ -1,8 +1,12 @@
 import { useState, useRef, useEffect } from 'react'
 import { useChat } from '@/hooks/useChat'
+import type { ChatIntent, ChatVertical } from '@/lib/api'
+import { WidgetSellerPhotos } from './WidgetSellerPhotos'
 
 interface Props {
   apiUrl?: string
+  vertical?: ChatVertical
+  intent?: ChatIntent
   onClose: () => void
 }
 
@@ -12,11 +16,24 @@ const CONV_KEY = 'angrosist_widget_conv_id'
 // `window.__ANGROSIST_API_URL__` at module init (before this component renders),
 // so getApiBase() resolves correctly on the first send. The effect below keeps
 // the global in sync if the prop changes.
-export function WidgetApp({ apiUrl, onClose }: Props) {
-  const { messages, typing, extracted: _extracted, send } = useChat({
-    convStorageKey: CONV_KEY,
-    greeting: 'Bună ziua! Sunt asistentul Euro Intermed. Cu ce vă pot ajuta?',
+export function WidgetApp({ apiUrl, vertical, intent, onClose }: Props) {
+  const {
+    messages,
+    typing,
+    extracted: _extracted,
+    send,
+    conversationId,
+    intent: resolvedIntent,
+  } = useChat({
+    // Per-flow storage so a buyer and a seller session don't collide on the host.
+    convStorageKey: `${CONV_KEY}_${vertical ?? 'angrosist'}_${intent ?? 'buy'}`,
+    greeting:
+      intent === 'sell'
+        ? 'Bună ziua! Sunt asistentul PalletClearance. Descrieți lotul și adăugați fotografii.'
+        : 'Bună ziua! Sunt asistentul Euro Intermed. Cu ce vă pot ajuta?',
     errorMessage: 'Eroare de rețea. Încercați din nou.',
+    vertical,
+    intent,
   })
   const [input, setInput] = useState('')
   const bottomRef = useRef<HTMLDivElement>(null)
@@ -114,6 +131,11 @@ export function WidgetApp({ apiUrl, onClose }: Props) {
         )}
         <div ref={bottomRef} />
       </div>
+
+      {/* Seller-only photo control (PalletClearance/sell). Hidden otherwise. */}
+      {resolvedIntent === 'sell' && (
+        <WidgetSellerPhotos conversationId={conversationId} />
+      )}
 
       {/* Input */}
       <div style={{ padding: '10px 12px', borderTop: '1px solid #e5e7eb', display: 'flex', gap: '8px', flexShrink: 0 }}>

@@ -38,6 +38,21 @@ export interface ChatResponse {
   extracted: ExtractedFields
 }
 
+/** Verticals the chat agent can serve. Angrosist (wholesale buyer) is the default. */
+export type ChatVertical = 'angrosist' | 'palletclearance'
+/** Conversation intent. `buy` is the default; `sell` enables the seller (photo) flow. */
+export type ChatIntent = 'buy' | 'sell'
+
+/**
+ * Optional flow selectors. They are only meaningful on the FIRST message of a
+ * conversation (the backend pins the flow there); later messages ignore them.
+ * Omitted → backend defaults to angrosist/buy.
+ */
+export interface ChatFlow {
+  vertical?: ChatVertical
+  intent?: ChatIntent
+}
+
 export interface TranscriptMessage {
   id: string
   role: string
@@ -49,14 +64,70 @@ export interface TranscriptMessage {
 export async function sendMessage(
   conversationId: string | null,
   message: string,
+  flow?: ChatFlow,
 ): Promise<ChatResponse> {
+  // vertical/intent are only sent on the first message (no conversation id yet);
+  // sending them later is harmless but the backend pins the flow on creation.
+  const isFirst = !conversationId
   const res = await fetch(`${getApiBase()}/api/chat`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ conversation_id: conversationId ?? undefined, message }),
+    body: JSON.stringify({
+      conversation_id: conversationId ?? undefined,
+      message,
+      ...(isFirst && flow?.vertical ? { vertical: flow.vertical } : {}),
+      ...(isFirst && flow?.intent ? { intent: flow.intent } : {}),
+    }),
   })
   if (!res.ok) throw new Error(`chat error ${res.status}`)
   return res.json()
+}
+
+/** Result of a successful seller-photo upload (mirrors the backend envelope). */
+export interface ConversationPhoto {
+  id: string
+  key: string
+  url: string
+}
+
+/**
+ * Uploads one seller photo to a PalletClearance/sell conversation via the PUBLIC
+ * multipart endpoint (no auth header). Surfaces backend `{error:{code,message}}`
+ * messages — incl. 409 (per-conversation cap) and 400 (non-image / oversize) —
+ * as a thrown {@link ApiError} so the UI can show the exact reason.
+ */
+export async function uploadConversationPhoto(
+  conversationId: string,
+  file: File,
+): Promise<ConversationPhoto> {
+  const form = new FormData()
+  form.append('file', file)
+
+  const res = await fetch(
+    `${getApiBase()}/api/conversations/${encodeURIComponent(
+      conversationId,
+    )}/photos`,
+    { method: 'POST', body: form },
+  )
+
+  if (!res.ok) {
+    let code = 'INTERNAL'
+    let message = `Eroare ${res.status}`
+    let details: { field: string; issue: string }[] | undefined
+    try {
+      const body = (await res.json()) as ErrorEnvelope
+      if (body.error) {
+        code = body.error.code ?? code
+        message = body.error.message ?? message
+        details = body.error.details
+      }
+    } catch {
+      /* non-JSON error body — keep defaults */
+    }
+    throw new ApiError(res.status, code, message, details)
+  }
+
+  return (await res.json()) as ConversationPhoto
 }
 
 // ===========================================================================

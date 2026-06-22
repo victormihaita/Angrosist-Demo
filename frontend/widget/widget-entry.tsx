@@ -1,9 +1,14 @@
 import { createRoot } from 'react-dom/client'
 import { WidgetApp } from './WidgetApp'
+import type { ChatIntent, ChatVertical } from '@/lib/api'
 
 interface WidgetConfig {
   apiUrl?: string
   containerId?: string
+  /** Flow vertical — defaults to 'angrosist' (existing embeds unaffected). */
+  vertical?: ChatVertical
+  /** Flow intent — defaults to 'buy'. Use 'sell' for the PalletClearance seller flow. */
+  intent?: ChatIntent
 }
 
 let mounted = false
@@ -38,7 +43,12 @@ function init(config: WidgetConfig = {}) {
   function render(open: boolean) {
     root.render(
       open ? (
-        <WidgetApp apiUrl={config.apiUrl} onClose={() => render(false)} />
+        <WidgetApp
+          apiUrl={config.apiUrl}
+          vertical={config.vertical}
+          intent={config.intent}
+          onClose={() => render(false)}
+        />
       ) : (
         <button
           onClick={() => render(true)}

@@ -2,6 +2,8 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import {
   sendMessage,
   subscribeToConversation,
+  type ChatIntent,
+  type ChatVertical,
   type ExtractedFields,
   type StreamMessage,
 } from '@/lib/api'
@@ -18,6 +20,10 @@ interface UseChatOptions {
   greeting: string
   /** Localized fallback message shown when both SSE and POST fail. */
   errorMessage?: string
+  /** Flow vertical — sent on the first message only. Defaults to angrosist. */
+  vertical?: ChatVertical
+  /** Flow intent — sent on the first message only. Defaults to buy. */
+  intent?: ChatIntent
 }
 
 interface UseChatResult {
@@ -27,6 +33,12 @@ interface UseChatResult {
   /** Latest extracted fields (from the most recent agent reply). */
   extracted: ExtractedFields
   send: (text: string) => void
+  /** The active conversation id once the first message has been sent (else null). */
+  conversationId: string | null
+  /** Resolved vertical the UI can branch on (defaults to angrosist). */
+  vertical: ChatVertical
+  /** Resolved intent the UI can branch on (defaults to buy). */
+  intent: ChatIntent
 }
 
 /**
@@ -53,12 +65,18 @@ export function useChat({
   convStorageKey,
   greeting,
   errorMessage = 'A apărut o eroare. Vă rugăm încercați din nou.',
+  vertical = 'angrosist',
+  intent = 'buy',
 }: UseChatOptions): UseChatResult {
   const [messages, setMessages] = useState<ChatMessage[]>([
     { role: 'assistant', content: greeting },
   ])
   const [typing, setTyping] = useState(false)
   const [extracted, setExtracted] = useState<ExtractedFields>({})
+  // Mirrors convIdRef into render state so the upload control can target it.
+  const [conversationId, setConversationId] = useState<string | null>(
+    () => sessionStorage.getItem(convStorageKey),
+  )
 
   const convIdRef = useRef<string | null>(sessionStorage.getItem(convStorageKey))
   const unsubscribeRef = useRef<(() => void) | null>(null)
@@ -130,8 +148,13 @@ export function useChat({
 
       void (async () => {
         try {
-          const resp = await sendMessage(convIdRef.current, text)
+          // vertical/intent are only honored on the first message (no id yet).
+          const resp = await sendMessage(convIdRef.current, text, {
+            vertical,
+            intent,
+          })
           convIdRef.current = resp.conversation_id
+          setConversationId(resp.conversation_id)
           sessionStorage.setItem(convStorageKey, resp.conversation_id)
 
           // Open SSE once we have a conversation id; reuse for later turns.
@@ -169,7 +192,15 @@ export function useChat({
         }
       })()
     },
-    [typing, convStorageKey, ensureSubscription, flushPostFallback, errorMessage],
+    [
+      typing,
+      convStorageKey,
+      ensureSubscription,
+      flushPostFallback,
+      errorMessage,
+      vertical,
+      intent,
+    ],
   )
 
   // Close the EventSource and clear timers on unmount.
@@ -181,5 +212,5 @@ export function useChat({
     }
   }, [])
 
-  return { messages, typing, extracted, send }
+  return { messages, typing, extracted, send, conversationId, vertical, intent }
 }
