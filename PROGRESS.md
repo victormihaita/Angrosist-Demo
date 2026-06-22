@@ -8,12 +8,14 @@
 **Owner-gated remainders (need GCP/Meta, not code):** GCP provisioning + GCS adapter · backup/restore drill + load test (on GCP) · live WhatsApp (Meta verification) · the 4 security residuals listed below (pre-production).
 **Owner-gated / deferred:** live WhatsApp traffic (Meta Business verification) · GCS FileStore adapter (at GCP provisioning) · WhatsApp 24h-window templates + wa.me intent routing · backup/restore drill (GCP).
 
-**Security residuals (tracked from the M5 audit; documented, not blockers — fix before production):**
-- _M1_ — no server-side conversation-ownership token on `/api/chat` + `/api/stream` (conv IDs are unguessable server UUIDs; bind a per-conversation session token before prod).
-- _M2_ — no rate-limit / max-turns cap on the public `/api/chat` (rely on Cloudflare WAF + add a server-side turn cap before prod).
-- _M3_ — `/worker/turn` push endpoint needs Cloud Tasks OIDC / ingress restriction at GCP provisioning (infra control).
-- _N2_ — erasure deletes GCS blobs best-effort post-commit; add a reconcile sweep.
-The M5 audit blocker (unauthenticated leads handlers) and the CORS-`*` / error-leak highs were FIXED.
+**Security residuals (from the M5 audit) — ALL CLOSED in code:**
+- _M1_ ✅ — stateless conversation-ownership token (HMAC, `internal/convtoken`): issued on the first turn, required on continuing `/api/chat` (`X-Conversation-Token`), `/api/stream` (`?token=`), and the public photo upload; frontend threads it. E2E asserts no-token → 403.
+- _M2_ ✅ — per-IP token-bucket rate limit on the public chat + photo routes (`RATE_LIMIT_RPM`) + a max-turns-per-conversation cap (`MAX_TURNS_PER_CONVERSATION`) refused before any LLM call.
+- _M3_ ✅ — `/worker/turn` verifies `WORKER_AUTH_TOKEN` (constant-time); Cloud Tasks OIDC remains the prod complement at provisioning (documented).
+- _N2_ ✅ — erasure blob-deletion failures are audited (`gdpr.blob_delete_failed`) + surfaced (`report.blobs_failed`); the automated reconcile sweep is owner-gated at provisioning.
+The M5 audit blocker (unauthenticated leads handlers) and the CORS-`*` / error-leak highs were FIXED earlier.
+
+**Truly owner/infra-gated (not code):** Cloud Tasks OIDC on the worker (at provisioning, complements the shared-secret token) · GCP backup/restore drill + load test · live WhatsApp (Meta verification) · GCS FileStore adapter.
 **Branches:** `main` = the **Vercel demo** (frozen at pre-today `b5d1b3d`, do not push WIP here). `develop` = **active build** (this is where we work). Push auth fixed (gh active account → `victormihaita`).
 
 ---
@@ -65,6 +67,7 @@ Legend: ✅ done · ⏳ in progress · ⬜ not started
 
 ## Changelog (newest first)
 
+- **2026-06-22** — **Security residuals closed (M1/M2/M3/N2).** Conversation-ownership token (HMAC, issued on first turn, required on continuing chat + SSE + photo upload; frontend wired; E2E asserts 403 without it). Per-IP rate limit + max-turns cap on public chat/photo. Worker `/worker/turn` bearer-token verification (constant-time). Erasure blob-failure auditing + report surfacing. Full suite green: 28 backend packages (incl. integration + E2E) + frontend lint/builds; secret scan clean. Owner/infra-gated remainders only (Cloud Tasks OIDC, GCP backup/restore + load test, Meta WhatsApp, GCS adapter).
 - **2026-06-22** — **Phase 1 buildable scope COMPLETE.** Added the offline Angrosist E2E (mock LLM seam, httptest over the real router + scratch DB: health→chat→lead→login→dashboard→offer→erasure), the handover guide (`docs/HANDOVER.md`), and a GDPR fix (conversations.contact_id back-linked on submit so erasure reaches the transcript — proven by the E2E). Full suite green: 25 backend packages incl. every integration test + the E2E, plus frontend lint + app/widget builds. M5's remaining items (backup/restore drill, load test) are GCP-gated.
 - **2026-06-22** — **M5 GDPR + security pass.** GDPR: consent capture (text_version/channel/IP, all flows + WhatsApp first contact, audited, non-blocking) + right-to-erasure cascade (deletes the personal graph incl. documents + FileStore blobs, preserves public companies, redacts—not deletes—audit logs) behind an admin-only `POST /api/gdpr/erasure`; full-graph erasure tested on a real DB. Security audit (security-gdpr-auditor) over auth/public-endpoints/webhook/SQL/erasure/secrets/CORS — fixed the blocker (removed unauthenticated `/api/leads` Vercel handlers) + highs (hardcoded CORS `*`, public chat error leak) + minor (admin-email log, PATCH CORS). 4 residuals tracked above.
 - **2026-06-22** — **M4 buildable scope complete.** Vertical-aware agent flow engine + PalletClearance buyer/seller flows (sibling typed-request writers); mandatory seller-photo gate + public conversation-scoped photo upload; widget/chat vertical selection + seller photo UI. WhatsApp Cloud API channel: signed webhook (HMAC) + Cloud API sender + channel-agnostic reply routing (web→SSE, whatsapp→send), agent core untouched — inert until WHATSAPP_* + Meta verification. RO/EN i18n (dependency-free, typed keys, language toggle) across the dashboard + public UI. All real-DB tested.
