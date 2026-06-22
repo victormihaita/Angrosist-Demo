@@ -92,5 +92,24 @@ func Router(c *app.Container) http.Handler {
 		mux.HandleFunc("GET /uploads/{key...}", localStore.FileServer())
 	}
 
-	return mux
+	// Global CORS: apply headers to every response and answer ALL preflight
+	// OPTIONS requests with 204 BEFORE method-routing/auth. Without this, a browser
+	// preflight for an authenticated dashboard call (it carries an Authorization
+	// header, so it isn't a "simple" request) would hit the method-routed mux and
+	// get 405 — or reach the auth middleware and get 401 — instead of a CORS 204.
+	// The allowlist itself stays env-driven in httputil.ApplyCORS (CORS_ALLOWED_ORIGINS).
+	return corsPreflight(mux)
+}
+
+// corsPreflight wraps the mux so every response carries CORS headers and every
+// OPTIONS preflight short-circuits with 204 (handled here, never routed/authed).
+func corsPreflight(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		httputil.ApplyCORS(w, r)
+		if r.Method == http.MethodOptions {
+			w.WriteHeader(http.StatusNoContent)
+			return
+		}
+		next.ServeHTTP(w, r)
+	})
 }
