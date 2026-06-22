@@ -139,7 +139,7 @@ func newIntegrationPhotoService(t *testing.T) *PhotoService {
 	store := localfs.New(t.TempDir())
 	docs := pgadapter.NewDocumentRepo()
 	guard := dbGuard{conv: pgadapter.NewConversationRepo()}
-	return NewPhotoService(store, docs, guard, 0, 3)
+	return NewPhotoService(store, docs, guard, testIssuer, 0, 3)
 }
 
 // TestPhotoUpload_Integration_SellerAcceptsImage drives the public endpoint against
@@ -201,7 +201,7 @@ func TestPhotoUpload_Integration_Oversize(t *testing.T) {
 	requireDB(t)
 	store := localfs.New(t.TempDir())
 	guard := dbGuard{conv: pgadapter.NewConversationRepo()}
-	svc := NewPhotoService(store, pgadapter.NewDocumentRepo(), guard, 64, 3)
+	svc := NewPhotoService(store, pgadapter.NewDocumentRepo(), guard, testIssuer, 64, 3)
 	convID := newSellerConversation(t, domain.VerticalPalletClearance, domain.IntentSell)
 
 	big := append(pngBytes(), bytes.Repeat([]byte("A"), 4096)...)
@@ -217,7 +217,7 @@ func TestPhotoUpload_Integration_PerConversationCap(t *testing.T) {
 	requireDB(t)
 	store := localfs.New(t.TempDir())
 	guard := dbGuard{conv: pgadapter.NewConversationRepo()}
-	svc := NewPhotoService(store, pgadapter.NewDocumentRepo(), guard, 0, 2)
+	svc := NewPhotoService(store, pgadapter.NewDocumentRepo(), guard, testIssuer, 0, 2)
 	convID := newSellerConversation(t, domain.VerticalPalletClearance, domain.IntentSell)
 
 	for i := 0; i < 2; i++ {

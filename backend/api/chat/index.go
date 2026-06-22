@@ -13,6 +13,10 @@ import (
 	"github.com/angrosist/demo/internal/usecases"
 )
 
+// conversationTokenHeader carries the conversation-ownership token on a continuing
+// turn (preferred over the body field). See SECURITY.md §1.1.
+const conversationTokenHeader = "X-Conversation-Token"
+
 const (
 	maxBodyBytes      = 64 << 10 // 64 KB — chat turns are small; reject oversized payloads
 	maxMessageLen     = 4000     // characters
@@ -52,6 +56,25 @@ func Handler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	issuer := app.GetContainer().ConvToken
+
+	// Ownership check (SECURITY.md §1.1 Spoofing): when the client continues an
+	// existing conversation it MUST present the server-issued token bound to that
+	// conversation_id. A first turn (no conversation_id) creates a brand-new
+	// conversation and needs no token (none exists yet). This runs BEFORE the turn
+	// and any paid LLM call, so a forged/guessed conversation_id is refused cheaply.
+	if req.ConversationID != "" {
+		token := r.Header.Get(conversationTokenHeader)
+		if token == "" {
+			token = req.ConversationToken
+		}
+		if !issuer.Verify(req.ConversationID, token) {
+			httputil.WriteErrorEnvelope(w, http.StatusForbidden, "FORBIDDEN",
+				"missing or invalid conversation token")
+			return
+		}
+	}
+
 	// When starting a new conversation, validate the optional vertical/intent up
 	// front so an unsupported flow is a 400, not a 500. (Omitted => angrosist/buy.)
 	if req.ConversationID == "" {
@@ -83,6 +106,10 @@ func Handler(w http.ResponseWriter, r *http.Request) {
 		httputil.WriteError(w, http.StatusInternalServerError, "agent error")
 		return
 	}
+
+	// Issue the ownership token for this (possibly newly created) conversation so
+	// every response carries the token the client must echo on the next turn.
+	resp.ConversationToken = issuer.Issue(resp.ConversationID)
 
 	httputil.WriteJSON(w, http.StatusOK, resp)
 }

@@ -9,8 +9,15 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/angrosist/demo/internal/convtoken"
 	"github.com/angrosist/demo/internal/ports"
 )
+
+// testIssuer is the shared conversation-token issuer for the photo handler tests.
+var testIssuer = convtoken.New("photo-test-secret", "")
+
+// validToken returns the correct ownership token for convID under testIssuer.
+func validToken(convID string) string { return testIssuer.Issue(convID) }
 
 // --- fakes for the photo endpoint ------------------------------------------
 
@@ -45,6 +52,25 @@ func doPhotoUpload(t *testing.T, svc *PhotoService, convID string, body *bytes.B
 	req := httptest.NewRequest(http.MethodPost, "/api/conversations/"+convID+"/photos", body)
 	req.SetPathValue("id", convID)
 	req.Header.Set("Content-Type", contentType)
+	// Existing tests exercise scope/validation with a valid ownership token; the
+	// token-specific tests use doPhotoUploadToken to send their own (or none).
+	req.Header.Set("X-Conversation-Token", validToken(convID))
+	rec := httptest.NewRecorder()
+	svc.Upload(rec, req)
+	return rec
+}
+
+// doPhotoUploadToken is like doPhotoUpload but sends the given ownership token
+// verbatim (empty => no token header), so the token-enforcement tests can drive
+// the missing/wrong/correct cases.
+func doPhotoUploadToken(t *testing.T, svc *PhotoService, convID, token string, body *bytes.Buffer, contentType string) *httptest.ResponseRecorder {
+	t.Helper()
+	req := httptest.NewRequest(http.MethodPost, "/api/conversations/"+convID+"/photos", body)
+	req.SetPathValue("id", convID)
+	req.Header.Set("Content-Type", contentType)
+	if token != "" {
+		req.Header.Set("X-Conversation-Token", token)
+	}
 	rec := httptest.NewRecorder()
 	svc.Upload(rec, req)
 	return rec
@@ -55,7 +81,7 @@ func doPhotoUpload(t *testing.T, svc *PhotoService, convID string, body *bytes.B
 func TestPhotoUpload_SellerSuccess(t *testing.T) {
 	store := newFakeStore()
 	docs := &fakeDocRepo{}
-	svc := NewPhotoService(store, docs, fakeGuard{seller: true}, 0, 0)
+	svc := NewPhotoService(store, docs, fakeGuard{seller: true}, testIssuer, 0, 0)
 
 	body, ct := buildMultipart(t, nil, "pic.png", pngBytes())
 	rec := doPhotoUpload(t, svc, photoConvID, body, ct)
@@ -85,7 +111,7 @@ func TestPhotoUpload_SellerSuccess(t *testing.T) {
 }
 
 func TestPhotoUpload_JPEGSuccess(t *testing.T) {
-	svc := NewPhotoService(newFakeStore(), &fakeDocRepo{}, fakeGuard{seller: true}, 0, 0)
+	svc := NewPhotoService(newFakeStore(), &fakeDocRepo{}, fakeGuard{seller: true}, testIssuer, 0, 0)
 	body, ct := buildMultipart(t, nil, "pic.jpg", jpegBytes())
 	rec := doPhotoUpload(t, svc, photoConvID, body, ct)
 	if rec.Code != http.StatusOK {
@@ -94,7 +120,7 @@ func TestPhotoUpload_JPEGSuccess(t *testing.T) {
 }
 
 func TestPhotoUpload_NonSellerConversation(t *testing.T) {
-	svc := NewPhotoService(newFakeStore(), &fakeDocRepo{}, fakeGuard{seller: false}, 0, 0)
+	svc := NewPhotoService(newFakeStore(), &fakeDocRepo{}, fakeGuard{seller: false}, testIssuer, 0, 0)
 	body, ct := buildMultipart(t, nil, "pic.png", pngBytes())
 	rec := doPhotoUpload(t, svc, photoConvID, body, ct)
 	if rec.Code != http.StatusBadRequest {
@@ -103,7 +129,7 @@ func TestPhotoUpload_NonSellerConversation(t *testing.T) {
 }
 
 func TestPhotoUpload_UnknownConversation(t *testing.T) {
-	svc := NewPhotoService(newFakeStore(), &fakeDocRepo{}, fakeGuard{notFound: true}, 0, 0)
+	svc := NewPhotoService(newFakeStore(), &fakeDocRepo{}, fakeGuard{notFound: true}, testIssuer, 0, 0)
 	body, ct := buildMultipart(t, nil, "pic.png", pngBytes())
 	rec := doPhotoUpload(t, svc, photoConvID, body, ct)
 	if rec.Code != http.StatusNotFound {
@@ -112,7 +138,7 @@ func TestPhotoUpload_UnknownConversation(t *testing.T) {
 }
 
 func TestPhotoUpload_BadConversationID(t *testing.T) {
-	svc := NewPhotoService(newFakeStore(), &fakeDocRepo{}, fakeGuard{seller: true}, 0, 0)
+	svc := NewPhotoService(newFakeStore(), &fakeDocRepo{}, fakeGuard{seller: true}, testIssuer, 0, 0)
 	body, ct := buildMultipart(t, nil, "pic.png", pngBytes())
 	rec := doPhotoUpload(t, svc, "not-a-uuid", body, ct)
 	if rec.Code != http.StatusBadRequest {
@@ -121,7 +147,7 @@ func TestPhotoUpload_BadConversationID(t *testing.T) {
 }
 
 func TestPhotoUpload_NonImageRejected(t *testing.T) {
-	svc := NewPhotoService(newFakeStore(), &fakeDocRepo{}, fakeGuard{seller: true}, 0, 0)
+	svc := NewPhotoService(newFakeStore(), &fakeDocRepo{}, fakeGuard{seller: true}, testIssuer, 0, 0)
 	// A PDF declared with a .png extension: extension passes the cheap check but the
 	// sniffed application/pdf is not an allowed image type.
 	body, ct := buildMultipart(t, nil, "doc.png", pdfBytes())
@@ -132,7 +158,7 @@ func TestPhotoUpload_NonImageRejected(t *testing.T) {
 }
 
 func TestPhotoUpload_DisallowedExtension(t *testing.T) {
-	svc := NewPhotoService(newFakeStore(), &fakeDocRepo{}, fakeGuard{seller: true}, 0, 0)
+	svc := NewPhotoService(newFakeStore(), &fakeDocRepo{}, fakeGuard{seller: true}, testIssuer, 0, 0)
 	body, ct := buildMultipart(t, nil, "evil.exe", pngBytes())
 	rec := doPhotoUpload(t, svc, photoConvID, body, ct)
 	if rec.Code != http.StatusBadRequest {
@@ -141,7 +167,7 @@ func TestPhotoUpload_DisallowedExtension(t *testing.T) {
 }
 
 func TestPhotoUpload_Oversize(t *testing.T) {
-	svc := NewPhotoService(newFakeStore(), &fakeDocRepo{}, fakeGuard{seller: true}, 64, 0)
+	svc := NewPhotoService(newFakeStore(), &fakeDocRepo{}, fakeGuard{seller: true}, testIssuer, 64, 0)
 	big := append(pngBytes(), bytes.Repeat([]byte("A"), 4096)...)
 	body, ct := buildMultipart(t, nil, "big.png", big)
 	rec := doPhotoUpload(t, svc, photoConvID, body, ct)
@@ -152,7 +178,7 @@ func TestPhotoUpload_Oversize(t *testing.T) {
 
 func TestPhotoUpload_PerConversationCap(t *testing.T) {
 	docs := &countingDocRepo{count: 3} // already at the cap
-	svc := NewPhotoService(newFakeStore(), docs, fakeGuard{seller: true}, 0, 3)
+	svc := NewPhotoService(newFakeStore(), docs, fakeGuard{seller: true}, testIssuer, 0, 3)
 	body, ct := buildMultipart(t, nil, "pic.png", pngBytes())
 	rec := doPhotoUpload(t, svc, photoConvID, body, ct)
 	if rec.Code != http.StatusConflict && rec.Code != http.StatusBadRequest {
@@ -161,11 +187,47 @@ func TestPhotoUpload_PerConversationCap(t *testing.T) {
 }
 
 func TestPhotoUpload_MissingFile(t *testing.T) {
-	svc := NewPhotoService(newFakeStore(), &fakeDocRepo{}, fakeGuard{seller: true}, 0, 0)
+	svc := NewPhotoService(newFakeStore(), &fakeDocRepo{}, fakeGuard{seller: true}, testIssuer, 0, 0)
 	body, ct := buildMultipart(t, nil, "", nil)
 	rec := doPhotoUpload(t, svc, photoConvID, body, ct)
 	if rec.Code != http.StatusBadRequest {
 		t.Fatalf("status = %d; want 400 for missing file", rec.Code)
+	}
+}
+
+// TestPhotoUpload_MissingToken asserts an upload to a valid seller conversation
+// WITHOUT the ownership token is refused 403 (SECURITY.md §1.1) — the seller scope
+// guard alone is not enough.
+func TestPhotoUpload_MissingToken(t *testing.T) {
+	svc := NewPhotoService(newFakeStore(), &fakeDocRepo{}, fakeGuard{seller: true}, testIssuer, 0, 0)
+	body, ct := buildMultipart(t, nil, "pic.png", pngBytes())
+	rec := doPhotoUploadToken(t, svc, photoConvID, "", body, ct)
+	if rec.Code != http.StatusForbidden {
+		t.Fatalf("status = %d; want 403 for missing token", rec.Code)
+	}
+}
+
+// TestPhotoUpload_WrongToken asserts a token for a DIFFERENT conversation is
+// refused 403 even on a valid seller conversation.
+func TestPhotoUpload_WrongToken(t *testing.T) {
+	svc := NewPhotoService(newFakeStore(), &fakeDocRepo{}, fakeGuard{seller: true}, testIssuer, 0, 0)
+	wrong := testIssuer.Issue("33333333-3333-3333-3333-333333333333")
+	body, ct := buildMultipart(t, nil, "pic.png", pngBytes())
+	rec := doPhotoUploadToken(t, svc, photoConvID, wrong, body, ct)
+	if rec.Code != http.StatusForbidden {
+		t.Fatalf("status = %d; want 403 for wrong token", rec.Code)
+	}
+}
+
+// TestPhotoUpload_TokenViaFormField asserts the "token" form-field fallback is
+// accepted when the header is absent.
+func TestPhotoUpload_TokenViaFormField(t *testing.T) {
+	svc := NewPhotoService(newFakeStore(), &fakeDocRepo{}, fakeGuard{seller: true}, testIssuer, 0, 0)
+	fields := map[string]string{"token": validToken(photoConvID)}
+	body, ct := buildMultipart(t, fields, "pic.png", pngBytes())
+	rec := doPhotoUploadToken(t, svc, photoConvID, "", body, ct) // no header
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d; want 200 with token via form field; body=%s", rec.Code, rec.Body.String())
 	}
 }
 

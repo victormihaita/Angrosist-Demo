@@ -7,10 +7,15 @@ import (
 	"net/http"
 
 	httputil "github.com/angrosist/demo/internal/api/httputil"
+	"github.com/angrosist/demo/internal/convtoken"
 	"github.com/angrosist/demo/internal/domain"
 	"github.com/angrosist/demo/internal/ports"
 	"github.com/google/uuid"
 )
+
+// conversationTokenHeader carries the conversation-ownership token on a photo
+// upload (preferred over the "token" form field). See SECURITY.md §1.1.
+const conversationTokenHeader = "X-Conversation-Token"
 
 // photoKind is the documents.kind used for seller photos. The PalletClearance
 // seller-photo blocking gate counts documents of this kind for the conversation.
@@ -52,21 +57,24 @@ type PhotoService struct {
 	store     ports.FileStore
 	docs      ports.DocumentRepo
 	guard     SellerConversationGuard
+	tokens    *convtoken.Issuer
 	maxBytes  int64
 	maxPhotos int
 }
 
 // NewPhotoService wires the public photo upload service. maxBytes <= 0 falls back
 // to defaultMaxUploadBytes; maxPhotos <= 0 falls back to
-// defaultMaxPhotosPerConversation. All ports must be non-nil.
-func NewPhotoService(store ports.FileStore, docs ports.DocumentRepo, guard SellerConversationGuard, maxBytes int64, maxPhotos int) *PhotoService {
+// defaultMaxPhotosPerConversation. All ports must be non-nil. tokens verifies the
+// conversation-ownership token the widget sends (SECURITY.md §1.1) so a guessed
+// conversation id cannot be used to upload to another visitor's conversation.
+func NewPhotoService(store ports.FileStore, docs ports.DocumentRepo, guard SellerConversationGuard, tokens *convtoken.Issuer, maxBytes int64, maxPhotos int) *PhotoService {
 	if maxBytes <= 0 {
 		maxBytes = defaultMaxUploadBytes
 	}
 	if maxPhotos <= 0 {
 		maxPhotos = defaultMaxPhotosPerConversation
 	}
-	return &PhotoService{store: store, docs: docs, guard: guard, maxBytes: maxBytes, maxPhotos: maxPhotos}
+	return &PhotoService{store: store, docs: docs, guard: guard, tokens: tokens, maxBytes: maxBytes, maxPhotos: maxPhotos}
 }
 
 // Upload handles POST /api/conversations/{id}/photos (multipart/form-data, field
@@ -88,6 +96,13 @@ func (s *PhotoService) Upload(w http.ResponseWriter, r *http.Request) {
 		httputil.WriteErrorEnvelope(w, http.StatusBadRequest, "VALIDATION_FAILED", "conversation id must be a UUID")
 		return
 	}
+
+	// Ownership check (SECURITY.md §1.1): the upload must carry the conversation's
+	// token via the X-Conversation-Token header (preferred) or a "token" form
+	// field. The header is checked up front; the form-field fallback is verified
+	// after the multipart parse below. This is IN ADDITION to the seller-scope
+	// guard — a guessed conversation id alone is not enough to upload.
+	headerToken := r.Header.Get(conversationTokenHeader)
 
 	// Scope guard: only an existing PalletClearance seller conversation may receive
 	// public photo uploads. Anything else is 404 (unknown) / 400 (wrong scope) so
@@ -132,6 +147,18 @@ func (s *PhotoService) Upload(w http.ResponseWriter, r *http.Request) {
 	}
 	if r.MultipartForm != nil {
 		defer r.MultipartForm.RemoveAll()
+	}
+
+	// Verify the conversation-ownership token now that the form is parsed: header
+	// (preferred) else the "token" form field. Done before storing any bytes.
+	token := headerToken
+	if token == "" {
+		token = r.FormValue("token")
+	}
+	if !s.tokens.Verify(convID, token) {
+		httputil.WriteErrorEnvelope(w, http.StatusForbidden, "FORBIDDEN",
+			"missing or invalid conversation token")
+		return
 	}
 
 	file, header, err := r.FormFile("file")

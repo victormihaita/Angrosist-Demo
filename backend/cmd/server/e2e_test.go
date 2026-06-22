@@ -104,6 +104,7 @@ func TestE2E_AngrosistCriticalPath(t *testing.T) {
 	)
 	var (
 		convID    string
+		convToken string
 		state     string
 		reply     string
 		confirmed bool
@@ -114,18 +115,26 @@ func TestE2E_AngrosistCriticalPath(t *testing.T) {
 			msg = "continua, te rog"
 		}
 		payload := map[string]string{"conversation_id": convID, "message": msg}
-		code, body := doJSON(t, cl, http.MethodPost, srv.URL+"/api/chat", "", payload)
+		// Echo the ownership token captured from the first response on every
+		// continuing turn (SECURITY.md §1.1) — the server requires it once a
+		// conversation_id is present.
+		code, body := doChatJSON(t, cl, srv.URL+"/api/chat", convToken, payload)
 		if code != http.StatusOK {
 			t.Fatalf("chat turn %d: status=%d body=%s", turn, code, body)
 		}
 		var cr struct {
-			ConversationID string         `json:"conversation_id"`
-			Reply          string         `json:"reply"`
-			State          string         `json:"state"`
-			Extracted      map[string]any `json:"extracted"`
+			ConversationID    string         `json:"conversation_id"`
+			ConversationToken string         `json:"conversation_token"`
+			Reply             string         `json:"reply"`
+			State             string         `json:"state"`
+			Extracted         map[string]any `json:"extracted"`
 		}
 		mustUnmarshal(t, body, &cr)
 		convID, state, reply = cr.ConversationID, cr.State, cr.Reply
+		if cr.ConversationToken == "" {
+			t.Fatalf("chat turn %d: response carried no conversation_token", turn)
+		}
+		convToken = cr.ConversationToken
 		t.Logf("(b) chat turn %d: state=%q reply=%q", turn, state, reply)
 		if state == "confirmed" {
 			confirmed = true
@@ -134,6 +143,17 @@ func TestE2E_AngrosistCriticalPath(t *testing.T) {
 	}
 	if !confirmed {
 		t.Fatalf("chat never reached confirmed state (last=%q)", state)
+	}
+
+	// Negative: a continuing turn for this conversation WITHOUT the ownership token
+	// is refused 403 before any turn work (SECURITY.md §1.1).
+	{
+		payload := map[string]string{"conversation_id": convID, "message": "continua"}
+		code, body := doChatJSON(t, cl, srv.URL+"/api/chat", "", payload)
+		if code != http.StatusForbidden {
+			t.Fatalf("continuing turn without token: status=%d (want 403) body=%s", code, body)
+		}
+		t.Logf("(b) ownership check: continuing turn without token -> 403")
 	}
 
 	// DB side effects: a company, a lead (angrosist/buy), and a sourcing_request
@@ -441,6 +461,32 @@ func doJSON(t *testing.T, cl *http.Client, method, url, token string, body any) 
 	resp, err := cl.Do(req)
 	if err != nil {
 		t.Fatalf("do %s %s: %v", method, url, err)
+	}
+	defer resp.Body.Close()
+	out, _ := io.ReadAll(resp.Body)
+	return resp.StatusCode, strings.TrimSpace(string(out))
+}
+
+// doChatJSON POSTs a JSON body to the chat endpoint, optionally sending the
+// conversation-ownership token via the X-Conversation-Token header (empty => none),
+// and returns the status code and raw body.
+func doChatJSON(t *testing.T, cl *http.Client, url, convToken string, body any) (int, string) {
+	t.Helper()
+	b, err := json.Marshal(body)
+	if err != nil {
+		t.Fatalf("marshal body: %v", err)
+	}
+	req, err := http.NewRequest(http.MethodPost, url, bytes.NewReader(b))
+	if err != nil {
+		t.Fatalf("new request POST %s: %v", url, err)
+	}
+	req.Header.Set("Content-Type", "application/json")
+	if convToken != "" {
+		req.Header.Set("X-Conversation-Token", convToken)
+	}
+	resp, err := cl.Do(req)
+	if err != nil {
+		t.Fatalf("do POST %s: %v", url, err)
 	}
 	defer resp.Body.Close()
 	out, _ := io.ReadAll(resp.Body)

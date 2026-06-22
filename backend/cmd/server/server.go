@@ -39,7 +39,7 @@ func Router(c *app.Container) http.Handler {
 	mux.HandleFunc("/api/health", healthhandler.Handler)
 	mux.HandleFunc("/api/chat", ratelimit.RateLimit(rl, chathandler.Handler))
 	// SSE stream for live agent replies (long-running server only — not Vercel).
-	mux.HandleFunc("/api/stream", streamhandler.Handler(c.Broker))
+	mux.HandleFunc("/api/stream", streamhandler.Handler(c.Broker, c.ConvToken))
 
 	// WhatsApp webhook (M4 part C): PUBLIC routes (no bearer auth) but every POST
 	// is authenticated by X-Hub-Signature-256 over the raw body; the GET handshake

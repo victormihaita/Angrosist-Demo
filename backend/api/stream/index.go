@@ -17,6 +17,7 @@ import (
 	"time"
 
 	httputil "github.com/angrosist/demo/internal/api/httputil"
+	"github.com/angrosist/demo/internal/convtoken"
 	"github.com/angrosist/demo/internal/ports"
 )
 
@@ -28,10 +29,18 @@ const maxConversationID = 128
 // the client from closing an idle connection.
 const heartbeatInterval = 20 * time.Second
 
-// Handler returns the SSE handler bound to the given broker. cmd/server builds it
-// from the container's broker so the same in-process broker the use-cases publish
-// to is the one this stream subscribes to.
-func Handler(broker ports.Broker) http.HandlerFunc {
+// Handler returns the SSE handler bound to the given broker and conversation-token
+// issuer. cmd/server builds it from the container's broker so the same in-process
+// broker the use-cases publish to is the one this stream subscribes to, and the
+// same issuer that mints tokens on /api/chat.
+//
+// Subscribing requires ?token=<token> matching ?conversation_id (SECURITY.md
+// §1.1): EventSource cannot send headers, so the per-conversation read scope is
+// granted via a query param. The token is an HMAC bound to the conversation id,
+// not a bearer secret, so its appearance in a URL only grants read access to that
+// one conversation. This handler deliberately never logs the raw query string or
+// the token (it would leak the read-scope grant into logs).
+func Handler(broker ports.Broker, issuer *convtoken.Issuer) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		// Reuse the shared origin-aware CORS (the widget is cross-origin by design).
 		if httputil.HandleOptions(w, r) {
@@ -50,6 +59,16 @@ func Handler(broker ports.Broker) http.HandlerFunc {
 		}
 		if len(convID) > maxConversationID {
 			httputil.WriteError(w, http.StatusBadRequest, "invalid conversation_id")
+			return
+		}
+
+		// Ownership check: only a client holding the conversation's token may
+		// subscribe to its event stream (SECURITY.md §1.1 Info disclosure — no
+		// cross-conversation reads). Token is a query param because EventSource
+		// cannot set headers; constant-time compared inside Verify.
+		if !issuer.Verify(convID, r.URL.Query().Get("token")) {
+			httputil.WriteErrorEnvelope(w, http.StatusForbidden, "FORBIDDEN",
+				"missing or invalid conversation token")
 			return
 		}
 

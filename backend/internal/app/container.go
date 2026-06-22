@@ -25,6 +25,7 @@ import (
 	"github.com/angrosist/demo/internal/broker"
 	"github.com/angrosist/demo/internal/channels"
 	"github.com/angrosist/demo/internal/channels/whatsapp"
+	"github.com/angrosist/demo/internal/convtoken"
 	"github.com/angrosist/demo/internal/domain"
 	"github.com/angrosist/demo/internal/email"
 	pgadapter "github.com/angrosist/demo/internal/persistence/postgres"
@@ -63,6 +64,13 @@ type Container struct {
 	// In-process (single-instance) today; swap a Redis adapter for multi-instance
 	// prod behind the same port.
 	Broker ports.Broker
+
+	// ConvToken issues/verifies stateless conversation-ownership tokens
+	// (SECURITY.md §1.1). It is injected into the chat handler, the SSE stream
+	// handler, and the public photo service so a guessed conversation_id cannot be
+	// used to continue, read, or upload to someone else's conversation. The key
+	// comes from CONVERSATION_TOKEN_SECRET, else is derived from JWT_SECRET.
+	ConvToken *convtoken.Issuer
 
 	// WhatsApp is the inbound WhatsApp webhook HTTP handler (GET verify + POST
 	// signed). Its routes are PUBLIC (no bearer auth) but signature-verified; they
@@ -149,6 +157,12 @@ func Init() {
 		}
 		authSvc := authhttp.NewService(userRepo, tokens)
 
+		// Conversation-ownership token issuer (stateless, no DB). Key from
+		// CONVERSATION_TOKEN_SECRET if set, else derived from JWT_SECRET with domain
+		// separation — so no new required secret. Injected into the public chat/stream/
+		// photo surfaces (SECURITY.md §1.1).
+		convTokens := convtoken.New(os.Getenv("CONVERSATION_TOKEN_SECRET"), os.Getenv("JWT_SECRET"))
+
 		llm := newLLM()
 		mailer := newMailer()
 		// Vertical-aware agent: the FlowRegistry selects the per-(vertical,intent)
@@ -234,6 +248,7 @@ func Init() {
 		photoSvc := uploadhttp.NewPhotoService(
 			fileStore, docRepo,
 			sellerConversationGuard{conv: convRepo},
+			convTokens,
 			maxUploadBytes(), maxPhotosPerConversation(),
 		)
 
@@ -259,6 +274,7 @@ func Init() {
 			Worker:    worker,
 			Queue:     q,
 			Broker:    eventBroker,
+			ConvToken: convTokens,
 			WhatsApp:  whatsAppWebhook,
 			Auth:      authSvc,
 			Dashboard: dashboardhttp.NewService(leadsUC, companiesUC),

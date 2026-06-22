@@ -9,8 +9,12 @@ import (
 	"time"
 
 	"github.com/angrosist/demo/internal/broker"
+	"github.com/angrosist/demo/internal/convtoken"
 	"github.com/angrosist/demo/internal/ports"
 )
+
+// streamIssuer is the shared conversation-token issuer for the stream tests.
+var streamIssuer = convtoken.New("stream-test-secret", "")
 
 // TestSSEStreamsMessageEvent runs the handler in a goroutine, publishes a message
 // event to the broker, and asserts it is written to the response stream in the
@@ -18,12 +22,13 @@ import (
 // handler cleanly (simulating client disconnect).
 func TestSSEStreamsMessageEvent(t *testing.T) {
 	b := broker.NewInProcess()
-	h := Handler(b)
+	h := Handler(b, streamIssuer)
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	req := httptest.NewRequest(http.MethodGet, "/api/stream?conversation_id=conv-1", nil).WithContext(ctx)
+	url := "/api/stream?conversation_id=conv-1&token=" + streamIssuer.Issue("conv-1")
+	req := httptest.NewRequest(http.MethodGet, url, nil).WithContext(ctx)
 	rec := httptest.NewRecorder()
 
 	done := make(chan struct{})
@@ -83,11 +88,36 @@ func TestSSEStreamsMessageEvent(t *testing.T) {
 // TestSSEMissingConversationID asserts the handler rejects a request without a
 // conversation_id.
 func TestSSEMissingConversationID(t *testing.T) {
-	h := Handler(broker.NewInProcess())
+	h := Handler(broker.NewInProcess(), streamIssuer)
 	req := httptest.NewRequest(http.MethodGet, "/api/stream", nil)
 	rec := httptest.NewRecorder()
 	h(rec, req)
 	if rec.Code != http.StatusBadRequest {
 		t.Fatalf("expected 400 for missing conversation_id, got %d", rec.Code)
+	}
+}
+
+// TestSSEMissingToken asserts a subscribe with a known conversation_id but NO
+// token is refused 403 (SECURITY.md §1.1 — no cross-conversation reads).
+func TestSSEMissingToken(t *testing.T) {
+	h := Handler(broker.NewInProcess(), streamIssuer)
+	req := httptest.NewRequest(http.MethodGet, "/api/stream?conversation_id=conv-1", nil)
+	rec := httptest.NewRecorder()
+	h(rec, req)
+	if rec.Code != http.StatusForbidden {
+		t.Fatalf("expected 403 for missing token, got %d", rec.Code)
+	}
+}
+
+// TestSSEWrongToken asserts a subscribe with a token bound to a DIFFERENT
+// conversation is refused 403.
+func TestSSEWrongToken(t *testing.T) {
+	h := Handler(broker.NewInProcess(), streamIssuer)
+	url := "/api/stream?conversation_id=conv-1&token=" + streamIssuer.Issue("conv-2")
+	req := httptest.NewRequest(http.MethodGet, url, nil)
+	rec := httptest.NewRecorder()
+	h(rec, req)
+	if rec.Code != http.StatusForbidden {
+		t.Fatalf("expected 403 for wrong token, got %d", rec.Code)
 	}
 }

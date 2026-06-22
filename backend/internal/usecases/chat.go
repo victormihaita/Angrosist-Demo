@@ -29,6 +29,12 @@ type ChatRequest struct {
 	// Intent selects buy vs sell within the vertical: "buy" | "sell". Empty
 	// defaults to buy. Only used when creating a new conversation.
 	Intent string `json:"intent,omitempty"`
+	// ConversationToken is the body-field fallback for the conversation-ownership
+	// token when continuing a conversation (the X-Conversation-Token header is
+	// preferred). It is required, and must match ConversationID, whenever
+	// ConversationID is set; a first turn (no ConversationID) needs none. The HTTP
+	// entrypoint verifies it before any LLM call (SECURITY.md §1.1).
+	ConversationToken string `json:"conversation_token,omitempty"`
 }
 
 // supportedVerticals / supportedIntents are the values the chat entrypoint accepts
@@ -73,10 +79,18 @@ func validateVerticalIntent(vertical, intent string) (string, string, error) {
 }
 
 type ChatResponse struct {
-	ConversationID string         `json:"conversation_id"`
-	Reply          string         `json:"reply"`
-	State          string         `json:"state"`
-	Extracted      map[string]any `json:"extracted"`
+	ConversationID string `json:"conversation_id"`
+	// ConversationToken is the server-issued ownership token for ConversationID
+	// (SECURITY.md §1.1). Every response carries it — for a newly created
+	// conversation it is the only place the client learns its token. The client
+	// must echo it (X-Conversation-Token header or conversation_token body field)
+	// on every subsequent turn for this conversation, or the turn is refused 403.
+	// The HTTP entrypoint sets this after the turn from the convtoken issuer; the
+	// use-case itself stays infrastructure-free.
+	ConversationToken string         `json:"conversation_token,omitempty"`
+	Reply             string         `json:"reply"`
+	State             string         `json:"state"`
+	Extracted         map[string]any `json:"extracted"`
 }
 
 type ChatUseCase struct {
