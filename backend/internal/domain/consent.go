@@ -60,6 +60,11 @@ type ErasureReport struct {
 	DocumentsDeleted int `json:"documents_deleted"`
 	// BlobsDeleted is the number of FileStore objects deleted (best-effort).
 	BlobsDeleted int `json:"blobs_deleted"`
+	// BlobsFailed is the number of FileStore objects that could NOT be deleted
+	// (left orphaned). Each failure is also written to activity_logs as a
+	// "gdpr.blob_delete_failed" row so it can be reconciled/retried; surfacing the
+	// count here lets the admin caller see that a follow-up is needed (residual N2).
+	BlobsFailed int `json:"blobs_failed"`
 	// AuditRowsRedacted is the number of activity_logs rows anonymized (PII
 	// stripped, redacted=true) — never deleted (FR-9.8 anti-circumvention).
 	AuditRowsRedacted int `json:"audit_rows_redacted"`

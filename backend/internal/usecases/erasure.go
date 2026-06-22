@@ -102,9 +102,23 @@ func (s *ErasureService) erase(ctx context.Context, actorID, contactID string) (
 	if s.files != nil {
 		for _, key := range blobKeys {
 			if derr := s.files.Delete(ctx, key); derr != nil {
-				// No PII: keys are server-generated namespaced paths, not personal data,
-				// but we still log only the count context to be safe.
+				// Orphaned blob (residual N2). Keys are server-generated namespaced
+				// paths, not personal data. Record each failure to the audit log so a
+				// reconcile/retry can find and re-delete it (FileStore.Delete is
+				// idempotent), and count it in the report so the admin caller knows a
+				// follow-up is needed — not just a silent log line.
+				report.BlobsFailed++
 				log.Printf("erasure: delete blob failed (contact=%s): %v", contactID, derr)
+				if s.activity != nil {
+					_ = s.activity.Append(ctx, domain.ActivityLog{
+						ActorType:  "admin",
+						ActorID:    actorID,
+						Action:     "gdpr.blob_delete_failed",
+						EntityType: "document_blob",
+						EntityID:   key,
+						Meta:       map[string]any{"error": derr.Error()},
+					})
+				}
 				continue
 			}
 			report.BlobsDeleted++
@@ -129,6 +143,7 @@ func (s *ErasureService) erase(ctx context.Context, actorID, contactID string) (
 				"consents_deleted":          report.ConsentsDeleted,
 				"documents_deleted":         report.DocumentsDeleted,
 				"blobs_deleted":             report.BlobsDeleted,
+				"blobs_failed":              report.BlobsFailed,
 				"audit_rows_redacted":       report.AuditRowsRedacted,
 			},
 		}); aerr != nil {
