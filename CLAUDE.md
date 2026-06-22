@@ -23,6 +23,8 @@ The full specification is split across companion docs (read in order when needed
 - `docs/specs/UIUX_GUIDE.md` — shadcn component inventory per screen
 - `docs/specs/ANAF_API.md` — company-verification provider audit (DemoANAF endpoints, tiers, field map, decision)
 - `docs/USER_JOURNEYS.md` — per-actor walkthrough of the final platform
+- `docs/HANDOVER.md` — operating & handover guide (run, env inventory, deploy, runbook, status)
+- `PROGRESS.md` — live milestone status (open this to see where the build is)
 - `backend/CLAUDE.md`, `frontend/CLAUDE.md` — layer-specific conventions
 - `CONTRIBUTING.md` — workflow, branch/PR/test conventions, the modular-swap recipe
 
