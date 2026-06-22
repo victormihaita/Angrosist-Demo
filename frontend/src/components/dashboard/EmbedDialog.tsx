@@ -8,6 +8,7 @@ import {
   DialogTitle,
   DialogDescription,
 } from '@/components/ui/dialog'
+import { useT } from '@/lib/i18n'
 
 const API_URL = import.meta.env.VITE_API_URL ?? window.location.origin
 const WIDGET_URL = `${window.location.origin}/widget.js`
@@ -31,6 +32,7 @@ const sellerEmbedCode = `<!-- PalletClearance — flux vânzător (cu fotografii
 </script>`
 
 export function EmbedDialog() {
+  const { t } = useT()
   const [open, setOpen] = useState(false)
   const [copied, setCopied] = useState<'default' | 'seller' | null>(null)
 
@@ -46,16 +48,14 @@ export function EmbedDialog() {
     <>
       <Button variant="outline" size="sm" onClick={() => setOpen(true)}>
         <Code2 className="h-3.5 w-3.5 mr-1.5" />
-        Embed Widget
+        {t('embed.trigger')}
       </Button>
 
       <Dialog open={open} onOpenChange={setOpen}>
         <DialogContent className="w-[calc(100vw-2rem)] max-w-xl rounded-xl">
           <DialogHeader>
-            <DialogTitle>Embed Chat Widget</DialogTitle>
-            <DialogDescription>
-              Adaugă codul de mai jos pe orice pagină pentru a activa chat-ul Euro Intermed.
-            </DialogDescription>
+            <DialogTitle>{t('embed.title')}</DialogTitle>
+            <DialogDescription>{t('embed.description')}</DialogDescription>
           </DialogHeader>
 
           <div className="relative mt-2">
@@ -67,6 +67,7 @@ export function EmbedDialog() {
               size="icon"
               className="absolute top-2 right-2 h-7 w-7"
               onClick={() => copy('default')}
+              aria-label={copied === 'default' ? t('embed.copied') : t('embed.copy')}
             >
               {copied === 'default'
                 ? <Check className="h-3.5 w-3.5 text-green-500" />
@@ -75,12 +76,12 @@ export function EmbedDialog() {
           </div>
 
           <p className="text-xs text-muted-foreground mt-1">
-            Widgetul apare ca un buton de chat în colțul din dreapta-jos al paginii.
+            {t('embed.floatNote')}
           </p>
 
           <div className="mt-4">
             <p className="text-xs font-medium mb-1.5">
-              Variantă vânzător PalletClearance (cu încărcare fotografii)
+              {t('embed.sellerHeading')}
             </p>
             <div className="relative">
               <pre className="bg-muted rounded-lg p-4 pr-10 text-xs leading-relaxed whitespace-pre-wrap break-all">
@@ -91,6 +92,7 @@ export function EmbedDialog() {
                 size="icon"
                 className="absolute top-2 right-2 h-7 w-7"
                 onClick={() => copy('seller')}
+                aria-label={copied === 'seller' ? t('embed.copied') : t('embed.copy')}
               >
                 {copied === 'seller'
                   ? <Check className="h-3.5 w-3.5 text-green-500" />

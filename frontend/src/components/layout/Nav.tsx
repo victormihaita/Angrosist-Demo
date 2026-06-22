@@ -2,7 +2,9 @@ import { Link, useLocation } from 'react-router-dom'
 import { LogOut } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { EmbedDialog } from '@/components/dashboard/EmbedDialog'
+import { LanguageToggle } from '@/components/layout/LanguageToggle'
 import { useAuth } from '@/auth/useAuth'
+import { useT } from '@/lib/i18n'
 import { Button } from '@/components/ui/button'
 import {
   DropdownMenu,
@@ -12,21 +14,6 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
-import { t } from '@/lib/strings'
-
-const LINKS = [
-  { to: '/', label: 'Acasă', exact: true },
-  { to: '/chat', label: 'Chat', exact: true },
-  { to: '/dashboard', label: 'Dashboard', exact: false },
-]
-
-// Dashboard sub-navigation — only rendered on /dashboard* routes. `exact` keeps
-// Pipeline from staying active on the Companies/Handoffs sections.
-const DASHBOARD_LINKS = [
-  { to: '/dashboard', label: t.nav.pipeline },
-  { to: '/dashboard/companies', label: t.nav.companies },
-  { to: '/dashboard/handoffs', label: t.nav.handoffs },
-]
 
 function initials(name: string): string {
   return name
@@ -41,7 +28,22 @@ function initials(name: string): string {
 export function Nav() {
   const { pathname } = useLocation()
   const { user, logout } = useAuth()
+  const { t } = useT()
   const onDashboard = pathname.startsWith('/dashboard')
+
+  const LINKS = [
+    { to: '/', label: t('nav.home'), exact: true },
+    { to: '/chat', label: t('nav.chat'), exact: true },
+    { to: '/dashboard', label: t('nav.dashboard'), exact: false },
+  ]
+
+  // Dashboard sub-navigation — only rendered on /dashboard* routes. `exact`
+  // keeps Pipeline from staying active on the Companies/Handoffs sections.
+  const DASHBOARD_LINKS = [
+    { to: '/dashboard', label: t('nav.pipeline') },
+    { to: '/dashboard/companies', label: t('nav.companies') },
+    { to: '/dashboard/handoffs', label: t('nav.handoffs') },
+  ]
 
   function isActive(to: string, exact: boolean) {
     return exact ? pathname === to : pathname.startsWith(to)
@@ -91,6 +93,9 @@ export function Nav() {
 
         {/* Right actions */}
         <div className="flex items-center gap-2 shrink-0">
+          {/* Language switch — visible app-wide (public + dashboard). */}
+          <LanguageToggle />
+
           <div className="hidden sm:block">
             <EmbedDialog />
           </div>
@@ -103,7 +108,7 @@ export function Nav() {
                   variant="outline"
                   size="sm"
                   className="gap-2"
-                  aria-label="Meniu utilizator"
+                  aria-label={t('auth.userMenu')}
                 >
                   <span className="flex h-5 w-5 items-center justify-center rounded-full bg-primary text-primary-foreground text-[10px] font-semibold">
                     {initials(user.name || user.email)}
@@ -123,7 +128,7 @@ export function Nav() {
                 <DropdownMenuSeparator />
                 <DropdownMenuItem onClick={logout} variant="destructive">
                   <LogOut className="h-4 w-4" />
-                  {t.auth.logout}
+                  {t('auth.logout')}
                 </DropdownMenuItem>
               </DropdownMenuContent>
             </DropdownMenu>

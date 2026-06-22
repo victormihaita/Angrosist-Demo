@@ -3,11 +3,12 @@ import { Button } from '@/components/ui/button'
 import { Skeleton } from '@/components/ui/skeleton'
 import { LeadDetail } from '@/components/dashboard/LeadDetail'
 import { useLeadDetail, useUsers } from '@/hooks/useDashboard'
-import { t } from '@/lib/strings'
+import { useT } from '@/lib/i18n'
 
 export function LeadDetailPage() {
   const { id } = useParams<{ id: string }>()
   const navigate = useNavigate()
+  const { t } = useT()
   const { data: lead, isLoading, error, refetch } = useLeadDetail(id ?? '')
   const { data: users = [] } = useUsers()
 
@@ -33,13 +34,13 @@ export function LeadDetailPage() {
   if (error || !lead) {
     return (
       <div className="flex flex-col items-center gap-3 py-20">
-        <p className="text-sm text-destructive">{t.detail.notFound}</p>
+        <p className="text-sm text-destructive">{t('detail.notFound')}</p>
         <div className="flex gap-2">
           <Button variant="outline" size="sm" onClick={() => refetch()}>
-            {t.common.retry}
+            {t('common.retry')}
           </Button>
           <Button variant="ghost" size="sm" onClick={() => navigate('/dashboard')}>
-            {t.common.back}
+            {t('common.back')}
           </Button>
         </div>
       </div>

@@ -8,9 +8,19 @@ interface Props {
   onChange: (v: string) => void
   onSend: () => void
   disabled?: boolean
+  /** Localized placeholder + send-button label (the parent owns i18n). */
+  placeholder?: string
+  sendLabel?: string
 }
 
-export function MessageInput({ value, onChange, onSend, disabled }: Props) {
+export function MessageInput({
+  value,
+  onChange,
+  onSend,
+  disabled,
+  placeholder,
+  sendLabel,
+}: Props) {
   const ref = useRef<HTMLTextAreaElement>(null)
 
   function handleKey(e: React.KeyboardEvent<HTMLTextAreaElement>) {
@@ -27,7 +37,7 @@ export function MessageInput({ value, onChange, onSend, disabled }: Props) {
         value={value}
         onChange={(e) => onChange(e.target.value)}
         onKeyDown={handleKey}
-        placeholder="Scrieți mesajul... (Enter pentru trimitere)"
+        placeholder={placeholder ?? 'Scrieți mesajul... (Enter pentru trimitere)'}
         disabled={disabled}
         rows={1}
         className="resize-none min-h-[40px] max-h-[120px] flex-1"
@@ -37,6 +47,7 @@ export function MessageInput({ value, onChange, onSend, disabled }: Props) {
         disabled={disabled || !value.trim()}
         size="icon"
         className="shrink-0 self-end"
+        aria-label={sendLabel}
       >
         <SendHorizonal className="h-4 w-4" />
       </Button>

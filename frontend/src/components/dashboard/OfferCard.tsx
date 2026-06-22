@@ -15,7 +15,7 @@ import {
   SelectValue,
 } from '@/components/ui/select'
 import { updateOffer, type AuthedLeadDetail, type OfferUpdate } from '@/lib/api'
-import { t, LEAD_STATUSES } from '@/lib/strings'
+import { useT, useEnums } from '@/lib/i18n'
 
 interface Props {
   lead: AuthedLeadDetail
@@ -23,6 +23,8 @@ interface Props {
 
 export function OfferCard({ lead }: Props) {
   const queryClient = useQueryClient()
+  const { t } = useT()
+  const { leadStatuses } = useEnums()
   const [status, setStatus] = useState(lead.status)
   const [value, setValue] = useState(
     lead.offer_value != null ? String(lead.offer_value) : '',
@@ -60,10 +62,10 @@ export function OfferCard({ lead }: Props) {
     },
     onError: (_err, _body, ctx) => {
       if (ctx?.prev) queryClient.setQueryData(['lead', lead.id], ctx.prev)
-      toast.error(t.detail.offerError)
+      toast.error(t('detail.offerError'))
     },
     onSuccess: () => {
-      toast.success(t.detail.offerSaved)
+      toast.success(t('detail.offerSaved'))
     },
     onSettled: () => {
       queryClient.invalidateQueries({ queryKey: ['lead', lead.id] })
@@ -85,18 +87,18 @@ export function OfferCard({ lead }: Props) {
     <Card>
       <CardHeader className="pb-3">
         <CardTitle className="text-sm font-medium text-muted-foreground uppercase tracking-wide">
-          {t.detail.offer}
+          {t('detail.offer')}
         </CardTitle>
       </CardHeader>
       <CardContent className="flex flex-col gap-3">
         <div className="flex flex-col gap-1.5">
-          <Label htmlFor="offer-status">{t.detail.offerStatus}</Label>
+          <Label htmlFor="offer-status">{t('detail.offerStatus')}</Label>
           <Select value={status} onValueChange={setStatus} disabled={busy}>
             <SelectTrigger id="offer-status" className="w-full">
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
-              {LEAD_STATUSES.map((s) => (
+              {leadStatuses.map((s) => (
                 <SelectItem key={s.value} value={s.value}>
                   {s.label}
                 </SelectItem>
@@ -106,7 +108,7 @@ export function OfferCard({ lead }: Props) {
         </div>
 
         <div className="flex flex-col gap-1.5">
-          <Label htmlFor="offer-value">{t.detail.offerValue}</Label>
+          <Label htmlFor="offer-value">{t('detail.offerValue')}</Label>
           <Input
             id="offer-value"
             type="number"
@@ -120,7 +122,7 @@ export function OfferCard({ lead }: Props) {
         </div>
 
         <div className="flex flex-col gap-1.5">
-          <Label htmlFor="offer-note">{t.detail.offerNote}</Label>
+          <Label htmlFor="offer-note">{t('detail.offerNote')}</Label>
           <Textarea
             id="offer-note"
             value={note}
@@ -132,7 +134,7 @@ export function OfferCard({ lead }: Props) {
         </div>
 
         <Button onClick={onSave} disabled={busy} className="self-end">
-          {busy ? t.common.saving : t.common.save}
+          {busy ? t('common.saving') : t('common.save')}
         </Button>
       </CardContent>
     </Card>

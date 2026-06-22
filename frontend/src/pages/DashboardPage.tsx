@@ -10,13 +10,14 @@ import {
   type FilterState,
 } from '@/components/dashboard/LeadFilterBar'
 import { useLeadsList, useUsers } from '@/hooks/useDashboard'
-import { t } from '@/lib/strings'
+import { useT } from '@/lib/i18n'
 import type { LeadFilters } from '@/lib/api'
 
 const PAGE_SIZE = 25
 
 export function DashboardPage() {
   const [searchParams, setSearchParams] = useSearchParams()
+  const { t } = useT()
   const { data: users = [] } = useUsers()
 
   // The assignee filter is only meaningful when we can resolve names. Admins get
@@ -100,9 +101,9 @@ export function DashboardPage() {
   return (
     <div className="max-w-7xl mx-auto px-4 py-8 w-full min-w-0">
       <div className="mb-6">
-        <h1 className="text-xl font-semibold">{t.pipeline.title}</h1>
+        <h1 className="text-xl font-semibold">{t('pipeline.title')}</h1>
         <p className="text-sm text-muted-foreground mt-1">
-          {t.pipeline.subtitle}
+          {t('pipeline.subtitle')}
         </p>
       </div>
 
@@ -127,9 +128,9 @@ export function DashboardPage() {
 
       {error && !isLoading && (
         <div className="flex flex-col items-center gap-3 py-16">
-          <p className="text-sm text-destructive">{t.pipeline.loadError}</p>
+          <p className="text-sm text-destructive">{t('pipeline.loadError')}</p>
           <Button variant="outline" size="sm" onClick={() => refetch()}>
-            {t.common.retry}
+            {t('common.retry')}
           </Button>
         </div>
       )}
@@ -138,7 +139,7 @@ export function DashboardPage() {
         <>
           {data.data.length === 0 ? (
             <div className="flex flex-col items-center justify-center py-20 text-muted-foreground text-sm gap-2">
-              <span>{t.pipeline.empty}</span>
+              <span>{t('pipeline.empty')}</span>
             </div>
           ) : (
             <LeadTable leads={data.data} users={users} />
@@ -146,7 +147,10 @@ export function DashboardPage() {
 
           <div className="flex items-center justify-between mt-4">
             <span className="text-xs text-muted-foreground">
-              {data.page.count} {data.page.count === 1 ? 'lead' : 'lead-uri'}
+              {t(
+                data.page.count === 1 ? 'pipeline.countOne' : 'pipeline.countOther',
+                { n: data.page.count },
+              )}
             </span>
             <div className="flex items-center gap-2">
               <Button
@@ -155,7 +159,7 @@ export function DashboardPage() {
                 onClick={goPrev}
                 disabled={!hasPrev || isFetching}
               >
-                {t.pipeline.prev}
+                {t('pipeline.prev')}
               </Button>
               <Button
                 variant="outline"
@@ -163,7 +167,7 @@ export function DashboardPage() {
                 onClick={goNext}
                 disabled={!hasNext || isFetching}
               >
-                {t.pipeline.next}
+                {t('pipeline.next')}
               </Button>
             </div>
           </div>

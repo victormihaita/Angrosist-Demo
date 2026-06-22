@@ -1,5 +1,5 @@
 import { Badge } from '@/components/ui/badge'
-import { statusLabel } from '@/lib/strings'
+import { useEnums } from '@/lib/i18n'
 
 const STATUS_VARIANT: Record<
   string,
@@ -17,6 +17,7 @@ const STATUS_VARIANT: Record<
 }
 
 export function StatusBadge({ status }: { status: string }) {
+  const { statusLabel } = useEnums()
   return (
     <Badge variant={STATUS_VARIANT[status] ?? 'secondary'}>
       {statusLabel(status)}

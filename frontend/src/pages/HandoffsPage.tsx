@@ -12,18 +12,19 @@ import {
 } from '@/components/ui/table'
 import { StatusBadge } from '@/components/dashboard/StatusBadge'
 import { useHandoffs } from '@/hooks/useDashboard'
-import { t } from '@/lib/strings'
+import { useT, formatDateTime } from '@/lib/i18n'
 
 export function HandoffsPage() {
   const navigate = useNavigate()
+  const { t, lang } = useT()
   const { data, isLoading, error, refetch } = useHandoffs()
 
   return (
     <div className="max-w-7xl mx-auto px-4 py-8 w-full min-w-0">
       <div className="mb-6">
-        <h1 className="text-xl font-semibold">{t.handoffs.title}</h1>
+        <h1 className="text-xl font-semibold">{t('handoffs.title')}</h1>
         <p className="text-sm text-muted-foreground mt-1">
-          {t.handoffs.subtitle}
+          {t('handoffs.subtitle')}
         </p>
       </div>
 
@@ -37,9 +38,9 @@ export function HandoffsPage() {
 
       {error && !isLoading && (
         <div className="flex flex-col items-center gap-3 py-16">
-          <p className="text-sm text-destructive">{t.handoffs.loadError}</p>
+          <p className="text-sm text-destructive">{t('handoffs.loadError')}</p>
           <Button variant="outline" size="sm" onClick={() => refetch()}>
-            {t.common.retry}
+            {t('common.retry')}
           </Button>
         </div>
       )}
@@ -49,7 +50,7 @@ export function HandoffsPage() {
           {data.data.length === 0 ? (
             <div className="flex flex-col items-center justify-center py-20 text-muted-foreground text-sm gap-3">
               <Inbox className="h-8 w-8 opacity-50" />
-              <span>{t.handoffs.empty}</span>
+              <span>{t('handoffs.empty')}</span>
             </div>
           ) : (
             <div className="rounded-lg border overflow-hidden">
@@ -57,11 +58,11 @@ export function HandoffsPage() {
                 <Table className="min-w-[820px]">
                   <TableHeader>
                     <TableRow>
-                      <TableHead>{t.handoffs.colCompany}</TableHead>
-                      <TableHead>{t.handoffs.colProduct}</TableHead>
-                      <TableHead>{t.pipeline.colStatus}</TableHead>
-                      <TableHead>{t.handoffs.colSnippet}</TableHead>
-                      <TableHead>{t.handoffs.colCreated}</TableHead>
+                      <TableHead>{t('handoffs.colCompany')}</TableHead>
+                      <TableHead>{t('handoffs.colProduct')}</TableHead>
+                      <TableHead>{t('pipeline.colStatus')}</TableHead>
+                      <TableHead>{t('handoffs.colSnippet')}</TableHead>
+                      <TableHead>{t('handoffs.colCreated')}</TableHead>
                       <TableHead className="text-right" />
                     </TableRow>
                   </TableHeader>
@@ -73,23 +74,25 @@ export function HandoffsPage() {
                         onClick={() => navigate(`/dashboard/${h.id}`)}
                       >
                         <TableCell className="font-medium">
-                          {h.company_name || t.common.none}
+                          {h.company_name || t('common.none')}
                         </TableCell>
-                        <TableCell>{h.product_name || t.common.none}</TableCell>
+                        <TableCell>
+                          {h.product_name || t('common.none')}
+                        </TableCell>
                         <TableCell>
                           <StatusBadge status={h.status} />
                         </TableCell>
                         <TableCell className="max-w-[320px]">
                           <span className="block truncate text-muted-foreground">
-                            {h.last_message || t.common.none}
+                            {h.last_message || t('common.none')}
                           </span>
                         </TableCell>
                         <TableCell className="text-muted-foreground text-xs whitespace-nowrap">
-                          {new Date(h.created_at).toLocaleString('ro-RO')}
+                          {formatDateTime(lang, h.created_at)}
                         </TableCell>
                         <TableCell className="text-right">
                           <span className="inline-flex items-center gap-1 text-xs font-medium text-primary">
-                            {t.handoffs.open}
+                            {t('handoffs.open')}
                             <ArrowRight className="h-3.5 w-3.5" />
                           </span>
                         </TableCell>

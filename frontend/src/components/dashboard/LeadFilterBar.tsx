@@ -8,7 +8,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select'
-import { t, LEAD_STATUSES, VERTICALS } from '@/lib/strings'
+import { useT, useEnums } from '@/lib/i18n'
 import type { PublicUser } from '@/lib/api'
 
 const ALL = '__all__'
@@ -29,6 +29,8 @@ interface Props {
 }
 
 export function LeadFilterBar({ value, users, showAssignee, onChange }: Props) {
+  const { t } = useT()
+  const { leadStatuses, verticals } = useEnums()
   // Local mirror so typing in search is responsive; debounce up to the URL.
   const [search, setSearch] = useState(value.q)
 
@@ -54,9 +56,9 @@ export function LeadFilterBar({ value, users, showAssignee, onChange }: Props) {
         <Input
           value={search}
           onChange={(e) => setSearch(e.target.value)}
-          placeholder={t.pipeline.search}
+          placeholder={t('pipeline.search')}
           className="pl-8"
-          aria-label={t.pipeline.search}
+          aria-label={t('pipeline.search')}
         />
       </div>
 
@@ -64,12 +66,12 @@ export function LeadFilterBar({ value, users, showAssignee, onChange }: Props) {
         value={value.status || ALL}
         onValueChange={(v) => onChange({ status: v === ALL ? '' : v })}
       >
-        <SelectTrigger className="w-[170px]" aria-label={t.pipeline.filterStatus}>
-          <SelectValue placeholder={t.pipeline.filterStatus} />
+        <SelectTrigger className="w-[170px]" aria-label={t('pipeline.filterStatus')}>
+          <SelectValue placeholder={t('pipeline.filterStatus')} />
         </SelectTrigger>
         <SelectContent>
-          <SelectItem value={ALL}>{t.pipeline.allStatuses}</SelectItem>
-          {LEAD_STATUSES.map((s) => (
+          <SelectItem value={ALL}>{t('pipeline.allStatuses')}</SelectItem>
+          {leadStatuses.map((s) => (
             <SelectItem key={s.value} value={s.value}>
               {s.label}
             </SelectItem>
@@ -81,12 +83,12 @@ export function LeadFilterBar({ value, users, showAssignee, onChange }: Props) {
         value={value.vertical || ALL}
         onValueChange={(v) => onChange({ vertical: v === ALL ? '' : v })}
       >
-        <SelectTrigger className="w-[170px]" aria-label={t.pipeline.filterVertical}>
-          <SelectValue placeholder={t.pipeline.filterVertical} />
+        <SelectTrigger className="w-[170px]" aria-label={t('pipeline.filterVertical')}>
+          <SelectValue placeholder={t('pipeline.filterVertical')} />
         </SelectTrigger>
         <SelectContent>
-          <SelectItem value={ALL}>{t.pipeline.allVerticals}</SelectItem>
-          {VERTICALS.map((v) => (
+          <SelectItem value={ALL}>{t('pipeline.allVerticals')}</SelectItem>
+          {verticals.map((v) => (
             <SelectItem key={v.value} value={v.value}>
               {v.label}
             </SelectItem>
@@ -103,13 +105,13 @@ export function LeadFilterBar({ value, users, showAssignee, onChange }: Props) {
         >
           <SelectTrigger
             className="w-[180px]"
-            aria-label={t.pipeline.filterAssignee}
+            aria-label={t('pipeline.filterAssignee')}
           >
-            <SelectValue placeholder={t.pipeline.filterAssignee} />
+            <SelectValue placeholder={t('pipeline.filterAssignee')} />
           </SelectTrigger>
           <SelectContent>
-            <SelectItem value={ALL}>{t.pipeline.allAssignees}</SelectItem>
-            <SelectItem value={UNASSIGNED}>{t.pipeline.unassigned}</SelectItem>
+            <SelectItem value={ALL}>{t('pipeline.allAssignees')}</SelectItem>
+            <SelectItem value={UNASSIGNED}>{t('pipeline.unassigned')}</SelectItem>
             {users.map((u) => (
               <SelectItem key={u.id} value={u.id}>
                 {u.name || u.email}

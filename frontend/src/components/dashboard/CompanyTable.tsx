@@ -8,7 +8,7 @@ import {
   TableRow,
 } from '@/components/ui/table'
 import { Badge } from '@/components/ui/badge'
-import { t } from '@/lib/strings'
+import { useT, useEnums } from '@/lib/i18n'
 import type { CompanySummary } from '@/lib/api'
 
 interface Props {
@@ -17,6 +17,8 @@ interface Props {
 
 export function CompanyTable({ companies }: Props) {
   const navigate = useNavigate()
+  const { t } = useT()
+  const { roleLabel } = useEnums()
 
   return (
     <div className="rounded-lg border overflow-hidden">
@@ -24,12 +26,12 @@ export function CompanyTable({ companies }: Props) {
         <Table className="min-w-[820px]">
           <TableHeader>
             <TableRow>
-              <TableHead>{t.companies.colName}</TableHead>
-              <TableHead>{t.companies.colCui}</TableHead>
-              <TableHead>{t.companies.colCountry}</TableHead>
-              <TableHead>{t.companies.colCaen}</TableHead>
-              <TableHead>{t.companies.colVat}</TableHead>
-              <TableHead>{t.companies.colRoles}</TableHead>
+              <TableHead>{t('companies.colName')}</TableHead>
+              <TableHead>{t('companies.colCui')}</TableHead>
+              <TableHead>{t('companies.colCountry')}</TableHead>
+              <TableHead>{t('companies.colCaen')}</TableHead>
+              <TableHead>{t('companies.colVat')}</TableHead>
+              <TableHead>{t('companies.colRoles')}</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
@@ -40,25 +42,27 @@ export function CompanyTable({ companies }: Props) {
                 onClick={() => navigate(`/dashboard/companies/${c.id}`)}
               >
                 <TableCell className="font-medium">
-                  {c.name || t.common.none}
+                  {c.name || t('common.none')}
                 </TableCell>
                 <TableCell className="whitespace-nowrap tabular-nums">
-                  {c.cui || c.reg_no || t.common.none}
+                  {c.cui || c.reg_no || t('common.none')}
                 </TableCell>
-                <TableCell>{c.country || t.common.none}</TableCell>
-                <TableCell>{c.caen || t.common.none}</TableCell>
-                <TableCell>{c.vat_status || t.common.none}</TableCell>
+                <TableCell>{c.country || t('common.none')}</TableCell>
+                <TableCell>{c.caen || t('common.none')}</TableCell>
+                <TableCell>{c.vat_status || t('common.none')}</TableCell>
                 <TableCell>
                   {c.roles && c.roles.length > 0 ? (
                     <div className="flex flex-wrap gap-1">
                       {c.roles.map((r) => (
                         <Badge key={r} variant="outline">
-                          {r}
+                          {roleLabel(r)}
                         </Badge>
                       ))}
                     </div>
                   ) : (
-                    <span className="text-muted-foreground">{t.common.none}</span>
+                    <span className="text-muted-foreground">
+                      {t('common.none')}
+                    </span>
                   )}
                 </TableCell>
               </TableRow>

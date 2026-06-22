@@ -5,6 +5,7 @@ import { Nav } from '@/components/layout/Nav'
 import { ErrorBoundary } from '@/components/ErrorBoundary'
 import { AuthProvider } from '@/auth/AuthProvider'
 import { ProtectedRoute } from '@/auth/ProtectedRoute'
+import { LanguageProvider } from '@/lib/i18n'
 import { Toaster } from '@/components/ui/sonner'
 import { LandingPage } from '@/pages/LandingPage'
 import { ChatPage } from '@/pages/ChatPage'
@@ -117,14 +118,16 @@ function AppLayout() {
 export default function App() {
   return (
     <ErrorBoundary>
-      <QueryClientProvider client={queryClient}>
-        <BrowserRouter>
-          <AuthProvider>
-            <AppLayout />
-            <Toaster richColors position="top-right" />
-          </AuthProvider>
-        </BrowserRouter>
-      </QueryClientProvider>
+      <LanguageProvider>
+        <QueryClientProvider client={queryClient}>
+          <BrowserRouter>
+            <AuthProvider>
+              <AppLayout />
+              <Toaster richColors position="top-right" />
+            </AuthProvider>
+          </BrowserRouter>
+        </QueryClientProvider>
+      </LanguageProvider>
     </ErrorBoundary>
   )
 }

@@ -11,6 +11,7 @@ import {
   SelectValue,
 } from '@/components/ui/select'
 import { useChat } from '@/hooks/useChat'
+import { useT } from '@/lib/i18n'
 import type { ChatIntent, ChatVertical } from '@/lib/api'
 
 const CONV_KEY = 'angrosist_conv_id'
@@ -18,23 +19,30 @@ const CONV_KEY = 'angrosist_conv_id'
 /** Flow presets selectable in the UI / via ?vertical=…&intent=…. */
 type FlowKey = 'angrosist-buy' | 'palletclearance-sell'
 
-const FLOWS: Record<
+// Static, non-localized flow routing (vertical/intent are backend codes). The
+// human-facing label + greeting bubble are localized at render via the i18n keys
+// referenced here. NOTE: the agent's CONVERSATION language is server-driven and
+// independent of this UI greeting/label.
+const FLOW_META: Record<
   FlowKey,
-  { label: string; vertical: ChatVertical; intent: ChatIntent; greeting: string }
+  {
+    vertical: ChatVertical
+    intent: ChatIntent
+    labelKey: 'chat.flowAngrosistBuy' | 'chat.flowPalletSell'
+    greetingKey: 'chat.greetingAngrosist' | 'chat.greetingPallet'
+  }
 > = {
   'angrosist-buy': {
-    label: 'Angrosist — Cumpăr (en-gros)',
     vertical: 'angrosist',
     intent: 'buy',
-    greeting:
-      'Bună ziua! Sunt asistentul Euro Intermed pentru achiziții en-gros. Cu ce vă pot ajuta astăzi?',
+    labelKey: 'chat.flowAngrosistBuy',
+    greetingKey: 'chat.greetingAngrosist',
   },
   'palletclearance-sell': {
-    label: 'PalletClearance — Vând (loturi paleți)',
     vertical: 'palletclearance',
     intent: 'sell',
-    greeting:
-      'Bună ziua! Sunt asistentul PalletClearance. Spuneți-mi ce lot doriți să vindeți și adăugați câteva fotografii.',
+    labelKey: 'chat.flowPalletSell',
+    greetingKey: 'chat.greetingPallet',
   },
 }
 
@@ -53,11 +61,12 @@ function resolveFlowKey(params: URLSearchParams): FlowKey {
  * switching flows fully resets the chat engine (greeting, conversation id, SSE).
  */
 function ChatSurface({ flowKey }: { flowKey: FlowKey }) {
-  const flow = FLOWS[flowKey]
+  const { t } = useT()
+  const flow = FLOW_META[flowKey]
   const { messages, typing, send, conversationId, intent } = useChat({
     // Separate storage per flow so switching doesn't resume the wrong conversation.
     convStorageKey: `${CONV_KEY}_${flowKey}`,
-    greeting: flow.greeting,
+    greeting: t(flow.greetingKey),
     vertical: flow.vertical,
     intent: flow.intent,
   })
@@ -87,7 +96,10 @@ function ChatSurface({ flowKey }: { flowKey: FlowKey }) {
       {/* Seller-only photo control: hidden for buyer/Angrosist flows */}
       {intent === 'sell' && (
         <div className="shrink-0 max-w-2xl w-full mx-auto">
-          <SellerPhotoUpload conversationId={conversationId} />
+          <SellerPhotoUpload
+            conversationId={conversationId}
+            label={t('chat.addPhotos')}
+          />
         </div>
       )}
 
@@ -98,6 +110,8 @@ function ChatSurface({ flowKey }: { flowKey: FlowKey }) {
           onChange={setInput}
           onSend={handleSend}
           disabled={typing}
+          placeholder={t('chat.inputPlaceholder')}
+          sendLabel={t('chat.send')}
         />
       </div>
     </>
@@ -106,6 +120,7 @@ function ChatSurface({ flowKey }: { flowKey: FlowKey }) {
 
 export function ChatPage() {
   const [searchParams, setSearchParams] = useSearchParams()
+  const { t } = useT()
   const initialFlow = useMemo(() => resolveFlowKey(searchParams), [searchParams])
   const [flowKey, setFlowKey] = useState<FlowKey>(initialFlow)
 
@@ -114,8 +129,8 @@ export function ChatPage() {
     setFlowKey(key)
     // Reflect the choice in the URL so the flow is shareable/refresh-stable.
     const sp = new URLSearchParams(searchParams)
-    sp.set('vertical', FLOWS[key].vertical)
-    sp.set('intent', FLOWS[key].intent)
+    sp.set('vertical', FLOW_META[key].vertical)
+    sp.set('intent', FLOW_META[key].intent)
     setSearchParams(sp, { replace: true })
   }
 
@@ -127,14 +142,14 @@ export function ChatPage() {
         <Select value={flowKey} onValueChange={handleFlowChange}>
           <SelectTrigger
             className="w-full sm:w-72"
-            aria-label="Alege fluxul de chat"
+            aria-label={t('chat.flowSelector')}
           >
             <SelectValue />
           </SelectTrigger>
           <SelectContent>
-            {(Object.keys(FLOWS) as FlowKey[]).map((k) => (
+            {(Object.keys(FLOW_META) as FlowKey[]).map((k) => (
               <SelectItem key={k} value={k}>
-                {FLOWS[k].label}
+                {t(FLOW_META[k].labelKey)}
               </SelectItem>
             ))}
           </SelectContent>

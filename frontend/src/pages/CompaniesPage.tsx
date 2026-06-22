@@ -8,13 +8,14 @@ import {
   type CompanyFilterState,
 } from '@/components/dashboard/CompanyFilterBar'
 import { useCompaniesList } from '@/hooks/useDashboard'
-import { t } from '@/lib/strings'
+import { useT } from '@/lib/i18n'
 import type { CompanyFilters } from '@/lib/api'
 
 const PAGE_SIZE = 25
 
 export function CompaniesPage() {
   const [searchParams, setSearchParams] = useSearchParams()
+  const { t } = useT()
 
   const filters: CompanyFilterState = useMemo(
     () => ({
@@ -87,9 +88,9 @@ export function CompaniesPage() {
   return (
     <div className="max-w-7xl mx-auto px-4 py-8 w-full min-w-0">
       <div className="mb-6">
-        <h1 className="text-xl font-semibold">{t.companies.title}</h1>
+        <h1 className="text-xl font-semibold">{t('companies.title')}</h1>
         <p className="text-sm text-muted-foreground mt-1">
-          {t.companies.subtitle}
+          {t('companies.subtitle')}
         </p>
       </div>
 
@@ -107,9 +108,9 @@ export function CompaniesPage() {
 
       {error && !isLoading && (
         <div className="flex flex-col items-center gap-3 py-16">
-          <p className="text-sm text-destructive">{t.companies.loadError}</p>
+          <p className="text-sm text-destructive">{t('companies.loadError')}</p>
           <Button variant="outline" size="sm" onClick={() => refetch()}>
-            {t.common.retry}
+            {t('common.retry')}
           </Button>
         </div>
       )}
@@ -118,7 +119,7 @@ export function CompaniesPage() {
         <>
           {data.data.length === 0 ? (
             <div className="flex flex-col items-center justify-center py-20 text-muted-foreground text-sm gap-2">
-              <span>{t.companies.empty}</span>
+              <span>{t('companies.empty')}</span>
             </div>
           ) : (
             <CompanyTable companies={data.data} />
@@ -126,7 +127,12 @@ export function CompaniesPage() {
 
           <div className="flex items-center justify-between mt-4">
             <span className="text-xs text-muted-foreground">
-              {t.companies.count(data.page.count)}
+              {t(
+                data.page.count === 1
+                  ? 'companies.countOne'
+                  : 'companies.countOther',
+                { n: data.page.count },
+              )}
             </span>
             <div className="flex items-center gap-2">
               <Button
@@ -135,7 +141,7 @@ export function CompaniesPage() {
                 onClick={goPrev}
                 disabled={!hasPrev || isFetching}
               >
-                {t.pipeline.prev}
+                {t('pipeline.prev')}
               </Button>
               <Button
                 variant="outline"
@@ -143,7 +149,7 @@ export function CompaniesPage() {
                 onClick={goNext}
                 disabled={!hasNext || isFetching}
               >
-                {t.pipeline.next}
+                {t('pipeline.next')}
               </Button>
             </div>
           </div>

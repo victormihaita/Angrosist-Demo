@@ -1,7 +1,7 @@
 import { Card, CardContent } from '@/components/ui/card'
 import { Skeleton } from '@/components/ui/skeleton'
 import { useKpis } from '@/hooks/useDashboard'
-import { t, formatRON } from '@/lib/strings'
+import { useT, formatRON } from '@/lib/i18n'
 
 function KpiCard({ label, value }: { label: string; value: string }) {
   return (
@@ -21,6 +21,7 @@ function KpiCard({ label, value }: { label: string; value: string }) {
  * KPIs are supplementary, not the primary view.
  */
 export function KpiCards() {
+  const { t, lang } = useT()
   const { data, isLoading, error } = useKpis()
 
   if (isLoading) {
@@ -40,10 +41,13 @@ export function KpiCards() {
 
   return (
     <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 mb-6">
-      <KpiCard label={t.kpi.offersSent} value={String(data.offers_sent)} />
-      <KpiCard label={t.kpi.won} value={String(data.won)} />
-      <KpiCard label={t.kpi.conversionRate} value={conversion} />
-      <KpiCard label={t.kpi.pipelineValue} value={formatRON(data.pipeline_value)} />
+      <KpiCard label={t('kpi.offersSent')} value={String(data.offers_sent)} />
+      <KpiCard label={t('kpi.won')} value={String(data.won)} />
+      <KpiCard label={t('kpi.conversionRate')} value={conversion} />
+      <KpiCard
+        label={t('kpi.pipelineValue')}
+        value={formatRON(lang, data.pipeline_value, t('common.none'))}
+      />
     </div>
   )
 }

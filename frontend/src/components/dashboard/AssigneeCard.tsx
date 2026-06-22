@@ -12,7 +12,7 @@ import {
 } from '@/components/ui/select'
 import { assignLead, type AuthedLeadDetail, type PublicUser } from '@/lib/api'
 import { useAuth } from '@/auth/useAuth'
-import { t } from '@/lib/strings'
+import { useT } from '@/lib/i18n'
 
 const UNASSIGNED = '__unassigned__'
 
@@ -24,6 +24,7 @@ interface Props {
 export function AssigneeCard({ lead, users }: Props) {
   const queryClient = useQueryClient()
   const { user } = useAuth()
+  const { t } = useT()
 
   const mutation = useMutation({
     mutationFn: (userId: string | null) => assignLead(lead.id, userId),
@@ -37,9 +38,9 @@ export function AssigneeCard({ lead, users }: Props) {
     },
     onError: (_err, _v, ctx) => {
       if (ctx?.prev) queryClient.setQueryData(['lead', lead.id], ctx.prev)
-      toast.error(t.detail.assignError)
+      toast.error(t('detail.assignError'))
     },
-    onSuccess: () => toast.success(t.detail.assignSaved),
+    onSuccess: () => toast.success(t('detail.assignSaved')),
     onSettled: () => {
       queryClient.invalidateQueries({ queryKey: ['lead', lead.id] })
       queryClient.invalidateQueries({ queryKey: ['leads'] })
@@ -53,7 +54,7 @@ export function AssigneeCard({ lead, users }: Props) {
     <Card>
       <CardHeader className="pb-3">
         <CardTitle className="text-sm font-medium text-muted-foreground uppercase tracking-wide">
-          {t.detail.assignee}
+          {t('detail.assignee')}
         </CardTitle>
       </CardHeader>
       <CardContent className="flex flex-col gap-3">
@@ -70,7 +71,7 @@ export function AssigneeCard({ lead, users }: Props) {
             </SelectTrigger>
             <SelectContent>
               <SelectItem value={UNASSIGNED}>
-                {t.pipeline.unassigned}
+                {t('pipeline.unassigned')}
               </SelectItem>
               {users.map((u) => (
                 <SelectItem key={u.id} value={u.id}>
@@ -87,7 +88,7 @@ export function AssigneeCard({ lead, users }: Props) {
                 ? lead.assigned_to === user?.id
                   ? user?.name || user?.email
                   : lead.assigned_to
-                : t.pipeline.unassigned}
+                : t('pipeline.unassigned')}
             </p>
             <div className="flex gap-2">
               <Button
@@ -96,7 +97,7 @@ export function AssigneeCard({ lead, users }: Props) {
                 disabled={busy || !user || lead.assigned_to === user.id}
                 onClick={() => user && mutation.mutate(user.id)}
               >
-                {t.detail.assignToMe}
+                {t('detail.assignToMe')}
               </Button>
               {lead.assigned_to && (
                 <Button
@@ -105,7 +106,7 @@ export function AssigneeCard({ lead, users }: Props) {
                   disabled={busy}
                   onClick={() => mutation.mutate(null)}
                 >
-                  {t.pipeline.unassigned}
+                  {t('pipeline.unassigned')}
                 </Button>
               )}
             </div>

@@ -14,7 +14,7 @@ import {
   TableRow,
 } from '@/components/ui/table'
 import { useCompanyDetail } from '@/hooks/useDashboard'
-import { t, formatRON } from '@/lib/strings'
+import { useT, useEnums, formatRON, formatDateTime } from '@/lib/i18n'
 
 interface FieldProps {
   label: string
@@ -34,6 +34,8 @@ function Field({ label, value }: FieldProps) {
 export function CompanyDetailPage() {
   const { id } = useParams<{ id: string }>()
   const navigate = useNavigate()
+  const { t, lang } = useT()
+  const { roleLabel } = useEnums()
   const {
     data: company,
     isLoading,
@@ -59,17 +61,17 @@ export function CompanyDetailPage() {
   if (error || !company) {
     return (
       <div className="flex flex-col items-center gap-3 py-20">
-        <p className="text-sm text-destructive">{t.companies.notFound}</p>
+        <p className="text-sm text-destructive">{t('companies.notFound')}</p>
         <div className="flex gap-2">
           <Button variant="outline" size="sm" onClick={() => refetch()}>
-            {t.common.retry}
+            {t('common.retry')}
           </Button>
           <Button
             variant="ghost"
             size="sm"
             onClick={() => navigate('/dashboard/companies')}
           >
-            {t.common.back}
+            {t('common.back')}
           </Button>
         </div>
       </div>
@@ -91,14 +93,16 @@ export function CompanyDetailPage() {
           onClick={() => navigate('/dashboard/companies')}
         >
           <ArrowLeft className="h-4 w-4 mr-1" />
-          {t.common.back}
+          {t('common.back')}
         </Button>
         <h2 className="text-lg font-semibold flex-1 truncate">
-          {company.name || 'Companie'}
+          {company.name || t('companies.fallbackTitle')}
         </h2>
         {company.is_active != null && (
           <Badge variant={company.is_active ? 'default' : 'destructive'}>
-            {company.is_active ? t.companies.active : t.companies.inactive}
+            {company.is_active
+              ? t('companies.active')
+              : t('companies.inactive')}
           </Badge>
         )}
       </div>
@@ -108,33 +112,33 @@ export function CompanyDetailPage() {
         <Card>
           <CardHeader className="pb-3">
             <CardTitle className="text-sm font-medium text-muted-foreground uppercase tracking-wide">
-              {t.companies.identity}
+              {t('companies.identity')}
             </CardTitle>
           </CardHeader>
           <CardContent>
             <dl className="flex flex-col gap-3">
-              <Field label={t.companies.colName} value={company.name} />
+              <Field label={t('companies.colName')} value={company.name} />
               <Field
-                label={t.companies.colCui}
+                label={t('companies.colCui')}
                 value={company.cui || company.reg_no}
               />
-              <Field label={t.companies.regNo} value={company.reg_no} />
-              <Field label={t.companies.colCountry} value={company.country} />
-              <Field label={t.companies.colCaen} value={company.caen} />
-              <Field label={t.companies.colVat} value={company.vat_status} />
-              <Field label={t.companies.address} value={company.address} />
-              <Field label={t.companies.county} value={company.county} />
+              <Field label={t('companies.regNo')} value={company.reg_no} />
+              <Field label={t('companies.colCountry')} value={company.country} />
+              <Field label={t('companies.colCaen')} value={company.caen} />
+              <Field label={t('companies.colVat')} value={company.vat_status} />
+              <Field label={t('companies.address')} value={company.address} />
+              <Field label={t('companies.county')} value={company.county} />
             </dl>
 
             {company.roles && company.roles.length > 0 && (
               <div className="mt-3">
                 <dt className="text-xs text-muted-foreground mb-1.5">
-                  {t.companies.colRoles}
+                  {t('companies.colRoles')}
                 </dt>
                 <div className="flex flex-wrap gap-1.5">
                   {company.roles.map((r) => (
                     <Badge key={r} variant="outline">
-                      {r}
+                      {roleLabel(r)}
                     </Badge>
                   ))}
                 </div>
@@ -148,20 +152,20 @@ export function CompanyDetailPage() {
           <Card>
             <CardHeader className="pb-3">
               <CardTitle className="text-sm font-medium text-muted-foreground uppercase tracking-wide">
-                {t.companies.verification}
+                {t('companies.verification')}
               </CardTitle>
             </CardHeader>
             <CardContent>
               {verification ? (
                 <dl className="flex flex-col gap-3">
                   <Field
-                    label={t.companies.colVat}
+                    label={t('companies.colVat')}
                     value={verification.vat_status}
                   />
                   {administrators.length > 0 && (
                     <div>
                       <dt className="text-xs text-muted-foreground">
-                        {t.detail.administrators}
+                        {t('detail.administrators')}
                       </dt>
                       <dd className="text-sm font-medium mt-0.5">
                         {administrators.join(', ')}
@@ -169,19 +173,17 @@ export function CompanyDetailPage() {
                     </div>
                   )}
                   <Field
-                    label={t.detail.checkedAt}
+                    label={t('detail.checkedAt')}
                     value={
                       verification.checked_at
-                        ? new Date(verification.checked_at).toLocaleString(
-                            'ro-RO',
-                          )
+                        ? formatDateTime(lang, verification.checked_at)
                         : undefined
                     }
                   />
                 </dl>
               ) : (
                 <p className="text-sm text-muted-foreground">
-                  {t.detail.noVerification}
+                  {t('detail.noVerification')}
                 </p>
               )}
             </CardContent>
@@ -192,7 +194,7 @@ export function CompanyDetailPage() {
             <Card>
               <CardHeader className="pb-3">
                 <CardTitle className="text-sm font-medium text-muted-foreground uppercase tracking-wide">
-                  {t.companies.financials}
+                  {t('companies.financials')}
                 </CardTitle>
               </CardHeader>
               <CardContent className="p-0">
@@ -200,9 +202,9 @@ export function CompanyDetailPage() {
                 <Table>
                   <TableHeader>
                     <TableRow>
-                      <TableHead>{t.companies.year}</TableHead>
+                      <TableHead>{t('companies.year')}</TableHead>
                       <TableHead className="text-right">
-                        {t.companies.turnover}
+                        {t('companies.turnover')}
                       </TableHead>
                     </TableRow>
                   </TableHeader>
@@ -211,7 +213,7 @@ export function CompanyDetailPage() {
                       <TableRow key={f.year}>
                         <TableCell className="tabular-nums">{f.year}</TableCell>
                         <TableCell className="text-right tabular-nums">
-                          {formatRON(f.turnover)}
+                          {formatRON(lang, f.turnover, t('common.none'))}
                         </TableCell>
                       </TableRow>
                     ))}

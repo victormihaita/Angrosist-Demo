@@ -8,7 +8,7 @@ import { MessageList, type Message } from '@/components/chat/MessageList'
 import { StatusBadge } from '@/components/dashboard/StatusBadge'
 import { OfferCard } from '@/components/dashboard/OfferCard'
 import { AssigneeCard } from '@/components/dashboard/AssigneeCard'
-import { t, verticalLabel } from '@/lib/strings'
+import { useT, useEnums, formatDateTime } from '@/lib/i18n'
 import type {
   AuthedLeadDetail,
   PublicUser,
@@ -54,6 +54,8 @@ interface Props {
 
 export function LeadDetail({ lead, users }: Props) {
   const navigate = useNavigate()
+  const { t, lang } = useT()
+  const { verticalLabel, roleLabel } = useEnums()
 
   const chatMessages: Message[] = (lead.transcript ?? [])
     .filter((m) => m.role === 'user' || m.role === 'model' || m.role === 'assistant')
@@ -80,10 +82,10 @@ export function LeadDetail({ lead, users }: Props) {
       <div className="flex items-center gap-3 mb-6">
         <Button variant="ghost" size="sm" onClick={() => navigate('/dashboard')}>
           <ArrowLeft className="h-4 w-4 mr-1" />
-          {t.common.back}
+          {t('common.back')}
         </Button>
         <h2 className="text-lg font-semibold flex-1 truncate">
-          {lead.company_name || 'Lead'}
+          {lead.company_name || t('detail.fallbackTitle')}
         </h2>
         {lead.vertical && (
           <Badge variant="secondary">{verticalLabel(lead.vertical)}</Badge>
@@ -97,14 +99,17 @@ export function LeadDetail({ lead, users }: Props) {
           <Card>
             <CardHeader className="pb-3">
               <CardTitle className="text-sm font-medium text-muted-foreground uppercase tracking-wide">
-                {t.detail.extracted}
+                {t('detail.extracted')}
               </CardTitle>
             </CardHeader>
             <CardContent>
               <dl className="flex flex-col gap-3">
-                <Field label={t.pipeline.colProduct} value={lead.product_name} />
                 <Field
-                  label={t.pipeline.colQuantity}
+                  label={t('pipeline.colProduct')}
+                  value={lead.product_name}
+                />
+                <Field
+                  label={t('pipeline.colQuantity')}
                   value={
                     lead.quantity != null
                       ? `${lead.quantity} ${lead.unit}`
@@ -112,13 +117,15 @@ export function LeadDetail({ lead, users }: Props) {
                   }
                 />
                 <Field
-                  label={t.pipeline.colLocation}
+                  label={t('pipeline.colLocation')}
                   value={lead.delivery_location}
                 />
                 {sr?.budget != null && (
-                  <Field label="Buget" value={sr.budget} />
+                  <Field label={t('detail.budget')} value={sr.budget} />
                 )}
-                {sr?.recurring && <Field label="Recurent" value="Da" />}
+                {sr?.recurring && (
+                  <Field label={t('detail.recurring')} value={t('detail.yes')} />
+                )}
               </dl>
             </CardContent>
           </Card>
@@ -126,7 +133,7 @@ export function LeadDetail({ lead, users }: Props) {
           <Card className="flex flex-col">
             <CardHeader className="pb-3 shrink-0">
               <CardTitle className="text-sm font-medium text-muted-foreground uppercase tracking-wide">
-                {t.detail.transcript}
+                {t('detail.transcript')}
               </CardTitle>
             </CardHeader>
             <CardContent className="p-0 overflow-y-auto max-h-[60vh]">
@@ -134,7 +141,7 @@ export function LeadDetail({ lead, users }: Props) {
                 <MessageList messages={chatMessages} readonly />
               ) : (
                 <p className="text-sm text-muted-foreground px-4 py-3">
-                  {t.detail.noMessages}
+                  {t('detail.noMessages')}
                 </p>
               )}
             </CardContent>
@@ -147,17 +154,20 @@ export function LeadDetail({ lead, users }: Props) {
             <Card>
               <CardHeader className="pb-3">
                 <CardTitle className="text-sm font-medium text-muted-foreground uppercase tracking-wide">
-                  {t.detail.company}
+                  {t('detail.company')}
                 </CardTitle>
               </CardHeader>
               <CardContent>
                 <dl className="flex flex-col gap-3">
-                  <Field label={t.detail.company} value={company.name} />
-                  <Field label="CUI" value={company.cui || company.reg_no} />
-                  <Field label={t.detail.country} value={company.country} />
-                  <Field label={t.detail.caen} value={company.caen} />
+                  <Field label={t('detail.company')} value={company.name} />
                   <Field
-                    label={t.detail.vatStatus}
+                    label={t('companies.colCui')}
+                    value={company.cui || company.reg_no}
+                  />
+                  <Field label={t('detail.country')} value={company.country} />
+                  <Field label={t('detail.caen')} value={company.caen} />
+                  <Field
+                    label={t('detail.vatStatus')}
                     value={company.vat_status || verification?.vat_status}
                   />
                 </dl>
@@ -165,12 +175,12 @@ export function LeadDetail({ lead, users }: Props) {
                 {company.roles && company.roles.length > 0 && (
                   <div className="mt-3">
                     <dt className="text-xs text-muted-foreground mb-1.5">
-                      {t.detail.roles}
+                      {t('detail.roles')}
                     </dt>
                     <div className="flex flex-wrap gap-1.5">
                       {company.roles.map((r) => (
                         <Badge key={r} variant="outline">
-                          {r}
+                          {roleLabel(r)}
                         </Badge>
                       ))}
                     </div>
@@ -184,7 +194,7 @@ export function LeadDetail({ lead, users }: Props) {
                     {administrators.length > 0 && (
                       <div>
                         <dt className="text-xs text-muted-foreground">
-                          {t.detail.administrators}
+                          {t('detail.administrators')}
                         </dt>
                         <dd className="text-sm font-medium mt-0.5">
                           {administrators.join(', ')}
@@ -192,19 +202,17 @@ export function LeadDetail({ lead, users }: Props) {
                       </div>
                     )}
                     <Field
-                      label={t.detail.checkedAt}
+                      label={t('detail.checkedAt')}
                       value={
                         verification.checked_at
-                          ? new Date(
-                              verification.checked_at,
-                            ).toLocaleString('ro-RO')
+                          ? formatDateTime(lang, verification.checked_at)
                           : undefined
                       }
                     />
                   </dl>
                 ) : (
                   <p className="text-sm text-muted-foreground">
-                    {t.detail.noVerification}
+                    {t('detail.noVerification')}
                   </p>
                 )}
               </CardContent>
@@ -215,17 +223,20 @@ export function LeadDetail({ lead, users }: Props) {
             <Card>
               <CardHeader className="pb-3">
                 <CardTitle className="text-sm font-medium text-muted-foreground uppercase tracking-wide">
-                  {t.detail.contact}
+                  {t('detail.contact')}
                 </CardTitle>
               </CardHeader>
               <CardContent>
                 <dl className="flex flex-col gap-3">
-                  <Field label="Nume" value={contact?.name} />
+                  <Field label={t('detail.contactName')} value={contact?.name} />
                   <Field
-                    label="Telefon"
+                    label={t('detail.contactPhone')}
                     value={contact?.phone || lead.phone}
                   />
-                  <Field label="Email" value={contact?.email || lead.email} />
+                  <Field
+                    label={t('detail.contactEmail')}
+                    value={contact?.email || lead.email}
+                  />
                 </dl>
               </CardContent>
             </Card>

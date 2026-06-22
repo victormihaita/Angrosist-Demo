@@ -3,6 +3,7 @@ import { ImagePlus, Loader2, Check, AlertCircle } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { toast } from 'sonner'
 import { uploadConversationPhoto, ApiError } from '@/lib/api'
+import { useT } from '@/lib/i18n'
 
 /**
  * Seller photo upload affordance for the PalletClearance/sell chat flow.
@@ -43,12 +44,11 @@ function nextId(): string {
   return `photo-${counter}-${Date.now()}`
 }
 
-export function SellerPhotoUpload({
-  conversationId,
-  label = 'Adaugă fotografii',
-}: Props) {
+export function SellerPhotoUpload({ conversationId, label }: Props) {
+  const { t } = useT()
   const inputRef = useRef<HTMLInputElement>(null)
   const [items, setItems] = useState<PhotoItem[]>([])
+  const buttonLabel = label ?? t('chat.addPhotos')
 
   const doneCount = items.filter((i) => i.status === 'done').length
   const busy = items.some((i) => i.status === 'uploading')
@@ -70,7 +70,7 @@ export function SellerPhotoUpload({
       Array.from(files).forEach((file) => {
         // Client-side guard mirrors the server (it is the real gate): images only.
         if (!file.type.startsWith('image/')) {
-          toast.error('Doar imagini sunt permise (jpeg, png, webp).')
+          toast.error(t('chat.photosOnlyImages'))
           return
         }
 
@@ -87,16 +87,14 @@ export function SellerPhotoUpload({
             updateItem(localId, { status: 'done', remoteUrl: res.url })
           } catch (err) {
             const message =
-              err instanceof ApiError
-                ? err.message
-                : 'Încărcarea a eșuat. Încercați din nou.'
+              err instanceof ApiError ? err.message : t('chat.uploadFailed')
             updateItem(localId, { status: 'error' })
             toast.error(message)
           }
         })()
       })
     },
-    [conversationId, updateItem],
+    [conversationId, updateItem, t],
   )
 
   return (
@@ -114,20 +112,20 @@ export function SellerPhotoUpload({
           ) : (
             <ImagePlus className="h-4 w-4 mr-1.5" />
           )}
-          {label}
+          {buttonLabel}
         </Button>
 
         {doneCount > 0 && (
           <span className="text-xs text-muted-foreground" aria-live="polite">
             {doneCount === 1
-              ? '1 fotografie încărcată'
-              : `${doneCount} fotografii încărcate`}
+              ? t('chat.photoCountOne')
+              : t('chat.photoCountOther', { n: doneCount })}
           </span>
         )}
 
         {disabled && (
           <span className="text-xs text-muted-foreground">
-            Trimiteți un mesaj pentru a începe, apoi adăugați fotografii.
+            {t('chat.photoHint')}
           </span>
         )}
       </div>
@@ -138,7 +136,7 @@ export function SellerPhotoUpload({
         accept="image/*"
         multiple
         className="hidden"
-        aria-label={label}
+        aria-label={buttonLabel}
         onChange={(e) => {
           handleFiles(e.target.files)
           // Reset so picking the same file again re-triggers change.

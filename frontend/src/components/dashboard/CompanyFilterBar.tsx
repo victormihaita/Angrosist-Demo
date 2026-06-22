@@ -8,7 +8,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select'
-import { t, COMPANY_ROLES } from '@/lib/strings'
+import { useT, useEnums } from '@/lib/i18n'
 
 const ALL = '__all__'
 
@@ -29,6 +29,8 @@ interface Props {
  * input. Each change is lifted to the URL by the page.
  */
 export function CompanyFilterBar({ value, onChange }: Props) {
+  const { t } = useT()
+  const { companyRoles } = useEnums()
   // Local mirrors so typing is responsive; debounce up to the URL.
   const [search, setSearch] = useState(value.q)
   const [country, setCountry] = useState(value.country)
@@ -67,9 +69,9 @@ export function CompanyFilterBar({ value, onChange }: Props) {
         <Input
           value={search}
           onChange={(e) => setSearch(e.target.value)}
-          placeholder={t.companies.search}
+          placeholder={t('companies.search')}
           className="pl-8"
-          aria-label={t.companies.search}
+          aria-label={t('companies.search')}
         />
       </div>
 
@@ -77,12 +79,12 @@ export function CompanyFilterBar({ value, onChange }: Props) {
         value={value.role || ALL}
         onValueChange={(v) => onChange({ role: v === ALL ? '' : v })}
       >
-        <SelectTrigger className="w-[170px]" aria-label={t.companies.filterRole}>
-          <SelectValue placeholder={t.companies.filterRole} />
+        <SelectTrigger className="w-[170px]" aria-label={t('companies.filterRole')}>
+          <SelectValue placeholder={t('companies.filterRole')} />
         </SelectTrigger>
         <SelectContent>
-          <SelectItem value={ALL}>{t.companies.allRoles}</SelectItem>
-          {COMPANY_ROLES.map((r) => (
+          <SelectItem value={ALL}>{t('companies.allRoles')}</SelectItem>
+          {companyRoles.map((r) => (
             <SelectItem key={r.value} value={r.value}>
               {r.label}
             </SelectItem>
@@ -93,10 +95,10 @@ export function CompanyFilterBar({ value, onChange }: Props) {
       <Input
         value={country}
         onChange={(e) => setCountry(e.target.value)}
-        placeholder={t.companies.filterCountry}
+        placeholder={t('companies.filterCountry')}
         className="w-[160px] uppercase"
         maxLength={2}
-        aria-label={t.companies.filterCountry}
+        aria-label={t('companies.filterCountry')}
       />
     </div>
   )

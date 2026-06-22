@@ -1,15 +1,17 @@
 import { CheckCircle2, Circle } from 'lucide-react'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
+import { useT } from '@/lib/i18n'
+import type { TKey } from '@/lib/i18n'
 import type { ExtractedFields } from '@/lib/api'
 
-const FIELDS: { key: keyof ExtractedFields; label: string }[] = [
-  { key: 'product_name', label: 'Produs' },
-  { key: 'quantity', label: 'Cantitate' },
-  { key: 'unit', label: 'Unitate' },
-  { key: 'delivery_location', label: 'Locație' },
-  { key: 'cui', label: 'CUI' },
-  { key: 'phone', label: 'Telefon' },
-  { key: 'email', label: 'Email' },
+const FIELDS: { key: keyof ExtractedFields; labelKey: TKey }[] = [
+  { key: 'product_name', labelKey: 'chat.fieldProduct' },
+  { key: 'quantity', labelKey: 'chat.fieldQuantity' },
+  { key: 'unit', labelKey: 'chat.fieldUnit' },
+  { key: 'delivery_location', labelKey: 'chat.fieldLocation' },
+  { key: 'cui', labelKey: 'chat.fieldCui' },
+  { key: 'phone', labelKey: 'chat.fieldPhone' },
+  { key: 'email', labelKey: 'chat.fieldEmail' },
 ]
 
 interface Props {
@@ -17,14 +19,17 @@ interface Props {
 }
 
 export function ExtractionStatus({ extracted }: Props) {
-  const filled = FIELDS.filter((f) => extracted[f.key] != null && extracted[f.key] !== '')
+  const { t } = useT()
+  const filled = FIELDS.filter(
+    (f) => extracted[f.key] != null && extracted[f.key] !== '',
+  )
   if (filled.length === 0) return null
 
   return (
     <Card className="mx-4 mb-3 text-sm">
       <CardHeader className="py-2 px-4">
         <CardTitle className="text-xs font-medium text-muted-foreground uppercase tracking-wide">
-          Informații colectate
+          {t('chat.extractedTitle')}
         </CardTitle>
       </CardHeader>
       <CardContent className="py-2 px-4">
@@ -40,7 +45,7 @@ export function ExtractionStatus({ extracted }: Props) {
                   <Circle className="h-3.5 w-3.5 text-muted-foreground/40 shrink-0" />
                 )}
                 <span className={done ? 'text-foreground' : 'text-muted-foreground'}>
-                  {f.label}
+                  {t(f.labelKey)}
                   {done && (
                     <span className="ml-1 text-muted-foreground">
                       — {String(val)}

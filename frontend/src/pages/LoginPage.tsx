@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useMemo, useState } from 'react'
 import { useNavigate, useLocation, Navigate } from 'react-router-dom'
 import { useForm } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
@@ -7,7 +7,7 @@ import { Loader2 } from 'lucide-react'
 
 import { useAuth } from '@/auth/useAuth'
 import { ApiError } from '@/lib/api'
-import { t } from '@/lib/strings'
+import { useT } from '@/lib/i18n'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import {
@@ -26,12 +26,10 @@ import {
   FormMessage,
 } from '@/components/ui/form'
 
-const schema = z.object({
-  email: z.string().email('Email invalid'),
-  password: z.string().min(1, 'Parola este obligatorie'),
-})
-
-type FormValues = z.infer<typeof schema>
+interface FormValues {
+  email: string
+  password: string
+}
 
 interface LocationState {
   from?: string
@@ -41,7 +39,19 @@ export function LoginPage() {
   const navigate = useNavigate()
   const location = useLocation()
   const { token, login } = useAuth()
+  const { t } = useT()
   const [serverError, setServerError] = useState<string | null>(null)
+
+  // Schema rebuilt per locale so zod validation messages are localized (zod is
+  // UX only; the Go backend is the real gate).
+  const schema = useMemo(
+    () =>
+      z.object({
+        email: z.string().email(t('auth.emailInvalid')),
+        password: z.string().min(1, t('auth.passwordRequired')),
+      }),
+    [t],
+  )
 
   const form = useForm<FormValues>({
     resolver: zodResolver(schema),
@@ -64,11 +74,11 @@ export function LoginPage() {
       })
     } catch (err) {
       if (err instanceof ApiError && err.status === 401) {
-        setServerError(t.auth.invalid)
+        setServerError(t('auth.invalid'))
       } else if (err instanceof ApiError) {
         setServerError(err.message)
       } else {
-        setServerError(t.common.error)
+        setServerError(t('common.error'))
       }
     }
   }
@@ -79,8 +89,8 @@ export function LoginPage() {
     <div className="flex flex-1 items-center justify-center px-4 py-12">
       <Card className="w-full max-w-sm">
         <CardHeader>
-          <CardTitle>{t.auth.loginTitle}</CardTitle>
-          <CardDescription>{t.auth.loginSubtitle}</CardDescription>
+          <CardTitle>{t('auth.loginTitle')}</CardTitle>
+          <CardDescription>{t('auth.loginSubtitle')}</CardDescription>
         </CardHeader>
         <CardContent>
           <Form {...form}>
@@ -90,12 +100,12 @@ export function LoginPage() {
                 name="email"
                 render={({ field }) => (
                   <FormItem>
-                    <FormLabel>{t.auth.email}</FormLabel>
+                    <FormLabel>{t('auth.email')}</FormLabel>
                     <FormControl>
                       <Input
                         type="email"
                         autoComplete="email"
-                        placeholder="nume@euro-intermed.ro"
+                        placeholder={t('auth.emailPlaceholder')}
                         disabled={submitting}
                         {...field}
                       />
@@ -109,7 +119,7 @@ export function LoginPage() {
                 name="password"
                 render={({ field }) => (
                   <FormItem>
-                    <FormLabel>{t.auth.password}</FormLabel>
+                    <FormLabel>{t('auth.password')}</FormLabel>
                     <FormControl>
                       <Input
                         type="password"
@@ -131,7 +141,7 @@ export function LoginPage() {
 
               <Button type="submit" className="w-full" disabled={submitting}>
                 {submitting && <Loader2 className="h-4 w-4 animate-spin" />}
-                {submitting ? t.auth.signingIn : t.auth.signIn}
+                {submitting ? t('auth.signingIn') : t('auth.signIn')}
               </Button>
             </form>
           </Form>
