@@ -12,17 +12,17 @@
 
 | Milestone | State | Headline outcome |
 |---|---|---|
-| M0 — Demo | ✅ built, ⚠️ needs hardening | Angrosist qualify → ANAF verify → lead in dashboard (Vercel+Neon, Gemini) |
-| M0.5 — Hardening | ⬜ next | Close audit gaps before scaling the demo into Phase 1 |
-| M1 — Foundation | ⬜ | GCP infra + CI/CD + full schema + refactor to target layout |
-| M2 — Agent core + widget | ⬜ | Channel-agnostic agent, async runtime, Claude LLM, WS/SSE widget |
-| M3 — Angrosist + dashboard | ⬜ | **Angrosist LIVE** end-to-end with full dashboard |
-| M4 — WhatsApp + PalletClearance | ⬜ | Both channels, both verticals, photos, RO/EN |
-| M5 — KPIs/GDPR/handover | ⬜ | Compliance, backup/restore, tests, docs, handover |
-| Phase 2 (M2.1–M2.3) | ⬜ | SkalYou matching marketplace |
+| M0 — Demo | ✅ | Angrosist qualify → ANAF verify → lead in dashboard |
+| M0.5 — Hardening | ✅ | Config hygiene, CORS, validation, LLM-port prep, error boundary |
+| M1 — Foundation | ✅ | `/cmd`+`/internal` refactor, full schema, local Docker, Terraform + CI/CD as code |
+| M2 — Agent core + widget | ✅ | Channel-agnostic agent, LLM port (Gemini+Claude), async runtime, SSE widget |
+| M3 — Angrosist + dashboard | ✅ | **Angrosist LIVE** end-to-end + full dashboard, rich DemoANAF, email, handoff, upload |
+| M4 — WhatsApp + PalletClearance | ✅ buildable | Both verticals + seller-photo gate; WhatsApp built (live = Meta-gated); RO/EN |
+| M5 — KPIs/GDPR/handover | ✅ buildable | GDPR cascade erasure + consent + audit, security audit+fixes, E2E, handover docs |
+| Phase 2 (M2.1–M2.3) | ⬜ | SkalYou matching marketplace (schema already allows) |
 | Phase 3 | ⬜ | First Country Operator |
 
-**Long-pole:** start **Meta Business verification at M1**; it gates WhatsApp (M4). Track it as a standing risk.
+**Phase 1 (M1–M5) is functionally complete** in the buildable scope. Owner-gated remainders (not code): GCP provisioning + GCS adapter, backup/restore drill + load test (on GCP), live WhatsApp (Meta Business verification — start early), and the pre-production security residuals in `PROGRESS.md`.
 
 ---
 

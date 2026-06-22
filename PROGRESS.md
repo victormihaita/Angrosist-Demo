@@ -3,8 +3,9 @@
 > **This is the file to open to see what's done, what's happening, and what's next.** Updated and committed after every unit of work. The full task list lives in `docs/BUILD_PLAN.md`; this is the running status on top of it.
 
 **Last updated:** 2026-06-21
-**Current milestone:** M5 — GDPR + security pass ✅ done; E2E tests + handover docs remain.
-**Next:** E2E test coverage of the Angrosist flow; finalize handover docs/runbook. Backup/restore drill is GCP-gated.
+**Current milestone:** M5 ✅ (buildable scope) — **Phase 1 (M1–M5) functionally complete.**
+**What's done:** GDPR (consent + cascade erasure + audit) · security audit + fixes · offline Angrosist E2E (HTTP→agent→tools→repos→dashboard→GDPR) · handover docs (`docs/HANDOVER.md`). Full suite green: 25 backend packages (all integration + E2E) + frontend lint/builds.
+**Owner-gated remainders (need GCP/Meta, not code):** GCP provisioning + GCS adapter · backup/restore drill + load test (on GCP) · live WhatsApp (Meta verification) · the 4 security residuals listed below (pre-production).
 **Owner-gated / deferred:** live WhatsApp traffic (Meta Business verification) · GCS FileStore adapter (at GCP provisioning) · WhatsApp 24h-window templates + wa.me intent routing · backup/restore drill (GCP).
 
 **Security residuals (tracked from the M5 audit; documented, not blockers — fix before production):**
@@ -26,7 +27,8 @@ The M5 audit blocker (unauthenticated leads handlers) and the CORS-`*` / error-l
 5. ✅ **M2 — Agent core + web widget** — LLM port + Gemini/Claude adapters, async runtime, SSE widget + typing
 6. ✅ **M3 — Angrosist + dashboard** — Angrosist LIVE end-to-end (verify → lead → email → dashboard → offer/assign → handoff → upload)
 7. ✅ **M4 — WhatsApp + PalletClearance + photos + i18n** (buildable scope; live WhatsApp gated on Meta verification)
-8. ⏳ **M5 — KPIs, GDPR, backup/restore, testing, handover** — GDPR (consent + cascade erasure + audit) ✅ · security audit + fixes ✅ · _remaining: E2E tests, handover docs, (GCP) backup/restore_
+8. ✅ **M5 — KPIs, GDPR, testing, handover** (buildable scope) — GDPR ✅ · security audit+fixes ✅ · Angrosist E2E ✅ · handover docs ✅ · _GCP-gated: backup/restore drill + load test_
+9. ⬜ **Phase 2 (SkalYou)** / **Phase 3 (Country Operator)** — schema already allows; start after Phase-1 acceptance + GCP go-live.
 7. ⬜ **M4 — WhatsApp + PalletClearance + photos + i18n**
 8. ⬜ **M5 — KPIs, GDPR/security, backup, testing, handover**
 9. ⬜ **Phase 2 (M2.1–M2.3)** — SkalYou marketplace
@@ -63,6 +65,7 @@ Legend: ✅ done · ⏳ in progress · ⬜ not started
 
 ## Changelog (newest first)
 
+- **2026-06-22** — **Phase 1 buildable scope COMPLETE.** Added the offline Angrosist E2E (mock LLM seam, httptest over the real router + scratch DB: health→chat→lead→login→dashboard→offer→erasure), the handover guide (`docs/HANDOVER.md`), and a GDPR fix (conversations.contact_id back-linked on submit so erasure reaches the transcript — proven by the E2E). Full suite green: 25 backend packages incl. every integration test + the E2E, plus frontend lint + app/widget builds. M5's remaining items (backup/restore drill, load test) are GCP-gated.
 - **2026-06-22** — **M5 GDPR + security pass.** GDPR: consent capture (text_version/channel/IP, all flows + WhatsApp first contact, audited, non-blocking) + right-to-erasure cascade (deletes the personal graph incl. documents + FileStore blobs, preserves public companies, redacts—not deletes—audit logs) behind an admin-only `POST /api/gdpr/erasure`; full-graph erasure tested on a real DB. Security audit (security-gdpr-auditor) over auth/public-endpoints/webhook/SQL/erasure/secrets/CORS — fixed the blocker (removed unauthenticated `/api/leads` Vercel handlers) + highs (hardcoded CORS `*`, public chat error leak) + minor (admin-email log, PATCH CORS). 4 residuals tracked above.
 - **2026-06-22** — **M4 buildable scope complete.** Vertical-aware agent flow engine + PalletClearance buyer/seller flows (sibling typed-request writers); mandatory seller-photo gate + public conversation-scoped photo upload; widget/chat vertical selection + seller photo UI. WhatsApp Cloud API channel: signed webhook (HMAC) + Cloud API sender + channel-agnostic reply routing (web→SSE, whatsapp→send), agent core untouched — inert until WHATSAPP_* + Meta verification. RO/EN i18n (dependency-free, typed keys, language toggle) across the dashboard + public UI. All real-DB tested.
 - **2026-06-21** — **M3 complete.** Dashboard frontend: login + ProtectedRoute + authed client; pipeline (filters + keyset pagination), lead detail (transcript/company/verification/contact) with offer-tracking + assignment; B2B directory, handoff queue, KPI cards; shadcn, code-split. Email + handoff: Mailer port (log/SMTP) + RO/EN templates, confirmation+internal mail on submit, `handoff_to_human` tool (needs_human/bot_active + staff mail + muted-bot guard). File upload: FileStore port (local FS; GCS deferred), DocumentRepo, validated `POST /api/upload`. All real-DB tested.
