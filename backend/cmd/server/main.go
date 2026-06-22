@@ -5,86 +5,18 @@ import (
 	"net/http"
 	"os"
 
-	chathandler "github.com/angrosist/demo/api/chat"
-	healthhandler "github.com/angrosist/demo/api/health"
-	streamhandler "github.com/angrosist/demo/api/stream"
-	httputil "github.com/angrosist/demo/internal/api/httputil"
 	"github.com/angrosist/demo/internal/app"
-	"github.com/angrosist/demo/internal/domain"
 )
 
 func main() {
-	mux := http.NewServeMux()
-
-	mux.HandleFunc("/api/health", healthhandler.Handler)
-	mux.HandleFunc("/api/chat", chathandler.Handler)
-	// SSE stream for live agent replies (long-running server only — not Vercel).
-	mux.HandleFunc("/api/stream", streamhandler.Handler(app.GetContainer().Broker))
-
-	// WhatsApp webhook (M4 part C): PUBLIC routes (no bearer auth) but every POST
-	// is authenticated by X-Hub-Signature-256 over the raw body; the GET handshake
-	// checks hub.verify_token. The channel is inert until WHATSAPP_* is configured
-	// and the Meta number is verified (owner action), but the routes (and signature
-	// enforcement) are always live. Path per API_CONTRACT §8.2.
-	whatsApp := app.GetContainer().WhatsApp
-	mux.HandleFunc("GET /api/webhooks/whatsapp", whatsApp.Verify)
-	mux.HandleFunc("POST /api/webhooks/whatsapp", whatsApp.Receive)
-
-	// Staff/admin auth + RBAC (M3 Epic 3.3): login is public; user management is
-	// admin-only behind bearer-token + role middleware.
-	authSvc := app.GetContainer().Auth
-	mux.HandleFunc("/api/auth/login", authSvc.Login)
-	mux.HandleFunc("/api/users", authSvc.Auth.RequireRole(domain.RoleAdmin, authSvc.ListUsers))
-
-	// Authenticated dashboard DATA endpoints (M3 Epic 3.3 part 2): leads pipeline,
-	// lead detail, offer tracking, assignment, B2B directory, handoff queue, KPIs.
-	// Every route is mounted behind the staff bearer-token middleware. The legacy
-	// unauthenticated /api/leads demo handlers were removed (M5 security pass);
-	// Vercel now serves only the public widget API (chat/health).
-	app.GetContainer().Dashboard.Register(mux, authSvc.Auth.Require)
-
-	// Document upload (M3 Epic 3.2): validated multipart upload behind the staff
-	// bearer-token middleware. Storage foundation for buyer product lists +
-	// (M4) seller photos.
-	mux.HandleFunc("POST /api/upload", authSvc.Auth.Require(app.GetContainer().Upload.Upload))
-	mux.HandleFunc("OPTIONS /api/upload", func(w http.ResponseWriter, r *http.Request) {
-		httputil.HandleOptions(w, r)
-	})
-
-	// GDPR right-to-erasure (M5): ADMIN-ONLY (RBAC matrix, SECURITY.md §3 — erasure
-	// is admin-only). Runs the cascade-erasure of a data subject (contact_id|email)
-	// and returns the counts report. The audit trail is redacted, not deleted, and
-	// public/company data is preserved.
-	gdpr := app.GetContainer().GDPR
-	mux.HandleFunc("POST /api/gdpr/erasure", authSvc.Auth.RequireRole(domain.RoleAdmin, gdpr.Erasure))
-	mux.HandleFunc("OPTIONS /api/gdpr/erasure", func(w http.ResponseWriter, r *http.Request) {
-		httputil.HandleOptions(w, r)
-	})
-
-	// Public, conversation-scoped seller-photo upload (M4 PalletClearance): the
-	// widget is public, so this route is UNAUTHENTICATED but scoped to existing
-	// PalletClearance seller conversations (validated in the handler). It backs the
-	// server-side seller-photo blocking gate enforced in the agent seller submit.
-	photos := app.GetContainer().Photos
-	mux.HandleFunc("POST /api/conversations/{id}/photos", photos.Upload)
-	mux.HandleFunc("OPTIONS /api/conversations/{id}/photos", func(w http.ResponseWriter, r *http.Request) {
-		httputil.HandleOptions(w, r)
-	})
-
-	// Local file-serving route so FileStore.URL works in dev/docker. Only wired
-	// for the local-filesystem provider; prod serves private objects via GCS
-	// signed URLs, not this route. Public (no auth) like the served bytes would be
-	// behind a signed URL otherwise; path traversal is blocked in the handler.
-	if localStore := app.GetContainer().LocalFS; localStore != nil {
-		mux.HandleFunc("GET /uploads/{key...}", localStore.FileServer())
-	}
+	handler := Router(app.GetContainer())
 
 	port := os.Getenv("PORT")
 	if port == "" {
 		port = "8080"
 	}
 	log.Println("Backend running on http://localhost:" + port)
-	if err := http.ListenAndServe(":"+port, mux); err != nil {
+	if err := http.ListenAndServe(":"+port, handler); err != nil {
 		log.Fatal(err)
 	}
 }

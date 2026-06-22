@@ -14,6 +14,7 @@ import (
 	"github.com/angrosist/demo/internal/agent"
 	claudellm "github.com/angrosist/demo/internal/agent/llm/claude"
 	geminillm "github.com/angrosist/demo/internal/agent/llm/gemini"
+	mockllm "github.com/angrosist/demo/internal/agent/llm/mock"
 	"github.com/angrosist/demo/internal/api/authhttp"
 	"github.com/angrosist/demo/internal/api/dashboardhttp"
 	"github.com/angrosist/demo/internal/api/gdprhttp"
@@ -394,13 +395,22 @@ func newWhatsAppSender() *whatsapp.Sender {
 }
 
 // newLLM selects the LLM adapter based on the LLM_PROVIDER environment variable.
-// Both adapters satisfy the same ports.LLM seam, so switching providers is a
-// config change with zero impact on the agent core. Gemini is the default so the
-// demo keeps working without an Anthropic key configured.
+// All adapters satisfy the same ports.LLM seam, so switching providers is a config
+// change with zero impact on the agent core. Gemini is the default so the demo
+// keeps working without an Anthropic key configured.
+//
+//	gemini (default) — Google Gemini demo provider.
+//	claude           — Anthropic Claude production provider.
+//	mock             — TEST/LOCAL-only deterministic offline provider (internal/
+//	                   agent/llm/mock). Never the default; selected explicitly so
+//	                   the assembled stack can be exercised end-to-end without a
+//	                   real model (see internal/e2e). Not for production.
 func newLLM() ports.LLM {
 	switch os.Getenv("LLM_PROVIDER") {
 	case "claude":
 		return claudellm.New()
+	case "mock":
+		return mockllm.New()
 	default:
 		return geminillm.New()
 	}
