@@ -3,8 +3,11 @@ package postgres
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"time"
+
+	"github.com/jackc/pgx/v5"
 
 	"github.com/angrosist/demo/internal/domain"
 	"github.com/angrosist/demo/internal/ports"
@@ -78,6 +81,98 @@ func (r *ConversationRepo) SetBotActive(ctx context.Context, id string, active b
 		return ports.ErrNotFound
 	}
 	return nil
+}
+
+// GetOrCreateByChannelPhone resolves (or creates) the open conversation for a
+// (channel, phone) pair. The WhatsApp inbound path keys conversations by sender
+// phone: it first looks for the most recent non-failed conversation on the
+// channel whose linked contact carries the phone; failing that it creates a
+// contact (carrying the phone) and a new conversation linked to it, tagged with
+// the resolved vertical/intent. The whole get-or-create runs in one transaction
+// so a concurrent first inbound from the same number cannot create two
+// conversations partially. All statements are parameterized; the phone is stored,
+// never logged.
+func (r *ConversationRepo) GetOrCreateByChannelPhone(ctx context.Context, channel, phone, vertical, intent string) (*domain.Conversation, error) {
+	if vertical == "" {
+		vertical = domain.DefaultVertical
+	}
+	if intent == "" {
+		intent = domain.DefaultIntent
+	}
+
+	tx, err := GetPool().Begin(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("get-or-create conversation: begin tx: %w", err)
+	}
+	defer tx.Rollback(ctx)
+
+	// 1) Existing open conversation for this channel + phone (newest first).
+	row := tx.QueryRow(ctx, `
+		SELECT c.id, c.channel, c.state, c.extracted, c.bot_active, COALESCE(c.language, ''),
+		       COALESCE(c.vertical, ''), COALESCE(c.intent, ''), c.created_at, c.updated_at
+		FROM conversations c
+		JOIN contacts ct ON ct.id = c.contact_id
+		WHERE c.channel = $1 AND ct.phone = $2 AND c.state <> 'failed'
+		ORDER BY c.created_at DESC
+		LIMIT 1
+	`, channel, phone)
+	conv, err := scanConversation(row)
+	if err == nil {
+		if cerr := tx.Commit(ctx); cerr != nil {
+			return nil, fmt.Errorf("get-or-create conversation: commit: %w", cerr)
+		}
+		return conv, nil
+	}
+	if !errors.Is(err, pgx.ErrNoRows) {
+		return nil, fmt.Errorf("get-or-create conversation: lookup: %w", err)
+	}
+
+	// 2) None found: create the contact carrying the phone, then the conversation.
+	var contactID string
+	if err := tx.QueryRow(ctx, `
+		INSERT INTO contacts (phone) VALUES ($1) RETURNING id
+	`, phone).Scan(&contactID); err != nil {
+		return nil, fmt.Errorf("get-or-create conversation: create contact: %w", err)
+	}
+
+	row = tx.QueryRow(ctx, `
+		INSERT INTO conversations (channel, state, extracted, vertical, intent, contact_id)
+		VALUES ($1, 'greeting', '{}', $2, $3, $4)
+		RETURNING id, channel, state, extracted, bot_active, COALESCE(language, ''),
+		          COALESCE(vertical, ''), COALESCE(intent, ''), created_at, updated_at
+	`, channel, vertical, intent, contactID)
+	conv, err = scanConversation(row)
+	if err != nil {
+		return nil, fmt.Errorf("get-or-create conversation: create conversation: %w", err)
+	}
+
+	if err := tx.Commit(ctx); err != nil {
+		return nil, fmt.Errorf("get-or-create conversation: commit: %w", err)
+	}
+	return conv, nil
+}
+
+// ContactPhoneByConversation returns the phone of the conversation's linked
+// contact, or ports.ErrNotFound when the conversation, its contact, or the phone
+// is missing. It backs outbound WhatsApp delivery.
+func (r *ConversationRepo) ContactPhoneByConversation(ctx context.Context, conversationID string) (string, error) {
+	var phone *string
+	err := GetPool().QueryRow(ctx, `
+		SELECT ct.phone
+		FROM conversations c
+		JOIN contacts ct ON ct.id = c.contact_id
+		WHERE c.id = $1
+	`, conversationID).Scan(&phone)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return "", ports.ErrNotFound
+	}
+	if err != nil {
+		return "", fmt.Errorf("contact phone by conversation %s: %w", conversationID, err)
+	}
+	if phone == nil || *phone == "" {
+		return "", ports.ErrNotFound
+	}
+	return *phone, nil
 }
 
 type scannable interface {

@@ -70,7 +70,117 @@ func (r *fakeMsgRepo) ClaimProviderMsg(ctx context.Context, conversationID, prov
 	return true, nil
 }
 
+// recordingReplier records the lifecycle calls a turn delivers through it.
+type recordingReplier struct {
+	mu       sync.Mutex
+	typing   int
+	delivers []ports.Event
+	errors   []string
+	convs    []string
+}
+
+func (r *recordingReplier) Typing(_ context.Context, conv *domain.Conversation) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.typing++
+	r.convs = append(r.convs, conv.Channel)
+	return nil
+}
+func (r *recordingReplier) Deliver(_ context.Context, _ *domain.Conversation, ev ports.Event) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.delivers = append(r.delivers, ev)
+	return nil
+}
+func (r *recordingReplier) Error(_ context.Context, _ *domain.Conversation, message string) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.errors = append(r.errors, message)
+	return nil
+}
+
+// stubRegistry routes every channel to the same recordingReplier and records the
+// channel name it was asked for.
+type stubRegistry struct {
+	replier  *recordingReplier
+	askedFor []string
+}
+
+func (s *stubRegistry) For(channel string) ports.Replier {
+	s.askedFor = append(s.askedFor, channel)
+	return s.replier
+}
+
+// stubConvRepo returns a fixed conversation for GetByID (the worker loads it to
+// route the reply by channel).
+type stubConvRepo struct {
+	conv *domain.Conversation
+}
+
+func (r *stubConvRepo) Create(context.Context, string) (*domain.Conversation, error) {
+	return r.conv, nil
+}
+func (r *stubConvRepo) CreateWith(context.Context, string, string, string) (*domain.Conversation, error) {
+	return r.conv, nil
+}
+func (r *stubConvRepo) GetByID(context.Context, string) (*domain.Conversation, error) {
+	return r.conv, nil
+}
+func (r *stubConvRepo) UpdateState(context.Context, string, domain.ConversationState) error {
+	return nil
+}
+func (r *stubConvRepo) UpdateExtracted(context.Context, string, map[string]any) error { return nil }
+func (r *stubConvRepo) SetBotActive(context.Context, string, bool) error              { return nil }
+func (r *stubConvRepo) GetOrCreateByChannelPhone(context.Context, string, string, string, string) (*domain.Conversation, error) {
+	return r.conv, nil
+}
+func (r *stubConvRepo) ContactPhoneByConversation(context.Context, string) (string, error) {
+	return "", nil
+}
+
 // --- tests -------------------------------------------------------------------
+
+// TestTurnWorker_RoutesReplyByChannel asserts the worker resolves the
+// conversation's channel through the registry and delivers typing + the completed
+// reply through that channel's Replier.
+func TestTurnWorker_RoutesReplyByChannel(t *testing.T) {
+	rep := &recordingReplier{}
+	reg := &stubRegistry{replier: rep}
+	conv := &domain.Conversation{ID: "conv-1", Channel: "whatsapp", State: domain.StateQualifying}
+	w := NewTurnWorker(&fakeRunner{}, lock.NewMemory(), newFakeMsgRepo(), &stubConvRepo{conv: conv}, reg)
+
+	if err := w.Process(context.Background(), newProviderJob("conv-1", "wamid.1")); err != nil {
+		t.Fatalf("process: %v", err)
+	}
+
+	if rep.typing != 1 {
+		t.Fatalf("expected 1 typing event, got %d", rep.typing)
+	}
+	if len(rep.delivers) != 1 || rep.delivers[0].Reply != "ok" {
+		t.Fatalf("expected 1 deliver with reply 'ok', got %+v", rep.delivers)
+	}
+	for _, c := range reg.askedFor {
+		if c != "whatsapp" {
+			t.Fatalf("registry asked for channel %q, want whatsapp", c)
+		}
+	}
+}
+
+// TestTurnWorker_DeliversErrorThroughChannel asserts a retryable turn error is
+// reported to the channel's Replier as a safe error event (and still propagates).
+func TestTurnWorker_DeliversErrorThroughChannel(t *testing.T) {
+	rep := &recordingReplier{}
+	reg := &stubRegistry{replier: rep}
+	conv := &domain.Conversation{ID: "conv-1", Channel: "web"}
+	w := NewTurnWorker(&fakeRunner{err: errors.New("boom")}, lock.NewMemory(), newFakeMsgRepo(), &stubConvRepo{conv: conv}, reg)
+
+	if err := w.Process(context.Background(), newJob("conv-1", "x")); err == nil {
+		t.Fatal("expected retryable error to propagate")
+	}
+	if len(rep.errors) != 1 {
+		t.Fatalf("expected 1 error delivery, got %d", len(rep.errors))
+	}
+}
 
 // TestTurnWorker_IdempotentByProviderMsgID asserts the same provider message id
 // runs the agent turn exactly once.

@@ -17,8 +17,11 @@ import (
 	"github.com/angrosist/demo/internal/api/authhttp"
 	"github.com/angrosist/demo/internal/api/dashboardhttp"
 	"github.com/angrosist/demo/internal/api/uploadhttp"
+	"github.com/angrosist/demo/internal/api/whatsapphttp"
 	"github.com/angrosist/demo/internal/auth"
 	"github.com/angrosist/demo/internal/broker"
+	"github.com/angrosist/demo/internal/channels"
+	"github.com/angrosist/demo/internal/channels/whatsapp"
 	"github.com/angrosist/demo/internal/domain"
 	"github.com/angrosist/demo/internal/email"
 	pgadapter "github.com/angrosist/demo/internal/persistence/postgres"
@@ -52,11 +55,17 @@ type Container struct {
 	Worker ports.TurnProcessor
 	// Queue enqueues agent-turn jobs. Selected by QUEUE_PROVIDER (local | cloudtasks).
 	Queue ports.Queue
-	// Broker is the real-time pub/sub seam for conversation events. The chat
-	// use-case and the worker publish to it; the SSE handler (cmd/server) subscribes
-	// to it. In-process (single-instance) today; swap a Redis adapter for multi-
-	// instance prod behind the same port.
+	// Broker is the real-time pub/sub seam for conversation events. The web reply
+	// channel publishes to it; the SSE handler (cmd/server) subscribes to it.
+	// In-process (single-instance) today; swap a Redis adapter for multi-instance
+	// prod behind the same port.
 	Broker ports.Broker
+
+	// WhatsApp is the inbound WhatsApp webhook HTTP handler (GET verify + POST
+	// signed). Its routes are PUBLIC (no bearer auth) but signature-verified; they
+	// are registered unconditionally in cmd/server. The channel is inert until the
+	// WHATSAPP_* env is set and the Meta number is verified.
+	WhatsApp *whatsapphttp.Handler
 
 	// Auth is the staff/admin authentication + RBAC HTTP service: login handler,
 	// admin user-management handlers, and the bearer-token / role middleware.
@@ -144,17 +153,42 @@ func Init() {
 		// across worker instances). The in-memory locker exists for tests.
 		locker := pgadapter.NewLocker()
 
-		// Real-time event broker (single-instance in-process adapter). The chat
-		// use-case and the worker publish turn events; the SSE handler subscribes.
+		// Real-time event broker (single-instance in-process adapter). The web reply
+		// channel publishes turn events; the SSE handler subscribes.
 		eventBroker := broker.NewInProcess()
+
+		// Channel-agnostic reply registry: resolve the per-conversation Replier by
+		// channel. web -> SSE broker (behavior-preserving); whatsapp -> Cloud API
+		// sender. Adding a channel = one more entry here (the swap recipe §5c).
+		waSender := newWhatsAppSender()
+		repliers := map[string]ports.Replier{
+			channels.ChannelWeb: channels.NewWeb(eventBroker),
+		}
+		if waSender.Configured() {
+			repliers[whatsapp.ChannelWhatsApp] = whatsapp.NewReplier(waSender, convRepo)
+		}
+		replierRegistry := channels.NewRegistry(repliers)
 
 		// Async turn processor: lock + idempotency + agent turn. Shared by the
 		// local queue handler and the cmd/worker HTTP endpoint.
-		worker := usecases.NewTurnWorker(runner, locker, msgRepo, convRepo, eventBroker)
+		worker := usecases.NewTurnWorker(runner, locker, msgRepo, convRepo, replierRegistry)
 
 		// Queue selection by QUEUE_PROVIDER. The local adapter binds the processor
 		// as its in-process handler; Cloud Tasks pushes to the worker URL.
 		q := newQueue(worker)
+
+		// Inbound WhatsApp webhook (GET verify + POST signed). Public, signature-
+		// verified; resolves/creates conversations by sender phone and enqueues a
+		// turn. Inert (signature still enforced, sends are no-ops) until WHATSAPP_*
+		// is configured and the Meta number is verified.
+		whatsAppWebhook := whatsapphttp.NewHandler(
+			whatsapphttp.Config{
+				AppSecret:   os.Getenv("WHATSAPP_APP_SECRET"),
+				VerifyToken: os.Getenv("WHATSAPP_VERIFY_TOKEN"),
+			},
+			convRepo,
+			q,
+		)
 
 		leadsUC := usecases.NewLeadUseCase(leadRepo, userRepo, activityRepo)
 		companiesUC := usecases.NewCompanyUseCase(companyRepo)
@@ -175,12 +209,13 @@ func Init() {
 
 		container = &Container{
 			DB:        &dbPinger{pool: pool},
-			Chat:      usecases.NewChatUseCase(convRepo, runner, locker, eventBroker),
+			Chat:      usecases.NewChatUseCase(convRepo, runner, locker, replierRegistry),
 			Leads:     leadsUC,
 			Locker:    locker,
 			Worker:    worker,
 			Queue:     q,
 			Broker:    eventBroker,
+			WhatsApp:  whatsAppWebhook,
 			Auth:      authSvc,
 			Dashboard: dashboardhttp.NewService(leadsUC, companiesUC),
 			Upload:    uploadSvc,
@@ -322,6 +357,20 @@ func newMailer() ports.Mailer {
 	default:
 		return email.NewLogMailer()
 	}
+}
+
+// newWhatsAppSender builds the WhatsApp Cloud API sender from the WHATSAPP_*
+// environment (Secret Manager in prod). It is always constructed, but reports
+// Configured()==false (and Send returns ErrNotConfigured) until WHATSAPP_TOKEN
+// and WHATSAPP_PHONE_NUMBER_ID are set — so the channel is inert until the owner
+// completes Meta Business verification and sets the secrets. Nothing is
+// hardcoded; WHATSAPP_API_BASE defaults to the adapter's pinned Graph version.
+func newWhatsAppSender() *whatsapp.Sender {
+	return whatsapp.NewSender(whatsapp.SenderConfig{
+		APIBase:       os.Getenv("WHATSAPP_API_BASE"),
+		Token:         os.Getenv("WHATSAPP_TOKEN"),
+		PhoneNumberID: os.Getenv("WHATSAPP_PHONE_NUMBER_ID"),
+	})
 }
 
 // newLLM selects the LLM adapter based on the LLM_PROVIDER environment variable.

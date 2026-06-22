@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"log"
 
+	"github.com/angrosist/demo/internal/domain"
 	"github.com/angrosist/demo/internal/ports"
 )
 
@@ -26,6 +27,12 @@ type AsyncRunner interface {
 // the agent turn. It implements ports.TurnProcessor and is invoked identically by
 // the local queue adapter's handler and the worker HTTP endpoint.
 //
+// Reply delivery is channel-agnostic: after a turn the worker resolves the
+// conversation's channel through the ports.ReplierRegistry and delivers the turn
+// lifecycle events (typing/message/error) through that channel's ports.Replier.
+// The web channel publishes to the SSE broker (unchanged behavior); the WhatsApp
+// channel sends the reply via the Cloud API. The agent core is untouched.
+//
 // Error classification: TurnWorker returns a non-nil error only for retryable
 // failures (the transport should retry). Terminal failures and business outcomes
 // are logged and swallowed (nil) so the transport does not retry. The agent core
@@ -37,46 +44,70 @@ type TurnWorker struct {
 	locker   ports.Locker
 	msgRepo  ports.MessageRepo
 	convRepo ports.ConversationRepo
-	broker   ports.Broker
+	repliers ports.ReplierRegistry
 }
 
 var _ ports.TurnProcessor = (*TurnWorker)(nil)
 
 // NewTurnWorker wires the async turn processor.
 //
-// convRepo and broker power live delivery: after a turn the worker reloads the
-// conversation and publishes a message event so a subscribed SSE client receives
-// the async reply (the same events the synchronous /api/chat path emits). Both
-// may be nil — publishing is then skipped and the worker behaves exactly as
-// before, keeping existing callers/tests working.
-func NewTurnWorker(runner AsyncRunner, locker ports.Locker, msgRepo ports.MessageRepo, convRepo ports.ConversationRepo, broker ports.Broker) *TurnWorker {
-	return &TurnWorker{runner: runner, locker: locker, msgRepo: msgRepo, convRepo: convRepo, broker: broker}
+// convRepo and repliers power live delivery: after a turn the worker reloads the
+// conversation and delivers the reply through the channel resolved by
+// conv.Channel (web -> SSE broker, whatsapp -> Cloud API). Both may be nil —
+// delivery is then skipped and the worker behaves exactly as before, keeping
+// existing callers/tests working.
+func NewTurnWorker(runner AsyncRunner, locker ports.Locker, msgRepo ports.MessageRepo, convRepo ports.ConversationRepo, repliers ports.ReplierRegistry) *TurnWorker {
+	return &TurnWorker{runner: runner, locker: locker, msgRepo: msgRepo, convRepo: convRepo, repliers: repliers}
 }
 
-// publish is a nil-safe Broker.Publish so a missing broker is a no-op.
-func (w *TurnWorker) publish(convID string, ev ports.Event) {
-	if w.broker != nil {
-		w.broker.Publish(convID, ev)
+// conversation loads the conversation for delivery routing. It returns nil when
+// the registry/convRepo are absent or the load fails (best-effort: a load error
+// is logged with no PII and never affects the turn outcome).
+func (w *TurnWorker) conversation(ctx context.Context, convID string) *domain.Conversation {
+	if w.repliers == nil || w.convRepo == nil {
+		return nil
 	}
+	conv, err := w.convRepo.GetByID(ctx, convID)
+	if err != nil {
+		log.Printf("worker: load conversation for reply delivery conversation=%s: %v", convID, err)
+		return nil
+	}
+	return conv
 }
 
-// publishReply reloads the conversation and publishes a completed-turn message
-// event. Best-effort: a reload failure is logged (no PII) and does not affect the
-// turn outcome.
-func (w *TurnWorker) publishReply(ctx context.Context, convID, reply string) {
-	if w.broker == nil {
+// typing signals the typing indicator through the conversation's channel.
+// Best-effort and nil-safe.
+func (w *TurnWorker) typing(ctx context.Context, conv *domain.Conversation) {
+	if conv == nil {
 		return
 	}
-	ev := ports.Event{Type: ports.EventMessage, Reply: reply}
-	if w.convRepo != nil {
-		if conv, err := w.convRepo.GetByID(ctx, convID); err != nil {
-			log.Printf("worker: load conversation for broker publish conversation=%s: %v", convID, err)
-		} else {
-			ev.State = string(conv.State)
-			ev.Extracted = conv.Extracted
-		}
+	if err := w.repliers.For(conv.Channel).Typing(ctx, conv); err != nil {
+		log.Printf("worker: typing delivery conversation=%s: %v", conv.ID, err)
 	}
-	w.publish(convID, ev)
+}
+
+// deliver sends the completed turn reply through the conversation's channel.
+// Best-effort and nil-safe (a delivery error is logged with no PII; it does not
+// fail the turn — the turn already committed).
+func (w *TurnWorker) deliver(ctx context.Context, conv *domain.Conversation, reply string) {
+	if conv == nil {
+		return
+	}
+	ev := ports.Event{Type: ports.EventMessage, Reply: reply, State: string(conv.State), Extracted: conv.Extracted}
+	if err := w.repliers.For(conv.Channel).Deliver(ctx, conv, ev); err != nil {
+		log.Printf("worker: reply delivery conversation=%s: %v", conv.ID, err)
+	}
+}
+
+// deliverError reports a failed turn to live clients through the conversation's
+// channel. Best-effort and nil-safe.
+func (w *TurnWorker) deliverError(ctx context.Context, conv *domain.Conversation, message string) {
+	if conv == nil {
+		return
+	}
+	if err := w.repliers.For(conv.Channel).Error(ctx, conv, message); err != nil {
+		log.Printf("worker: error delivery conversation=%s: %v", conv.ID, err)
+	}
 }
 
 // Process runs one job. Concurrency for the same conversation is serialized by
@@ -89,6 +120,9 @@ func (w *TurnWorker) Process(ctx context.Context, job ports.TurnJob) error {
 	}
 
 	return w.locker.WithConversationLock(ctx, job.ConversationID, func(ctx context.Context) error {
+		// Resolve the conversation once for typing + reply routing by channel.
+		conv := w.conversation(ctx, job.ConversationID)
+
 		// Idempotency (inside the lock — the authoritative check). For jobs with a
 		// provider message id, atomically claim it; if a prior turn already
 		// claimed it, this is a redelivery — skip processing. Web turns carry no
@@ -103,26 +137,27 @@ func (w *TurnWorker) Process(ctx context.Context, job ports.TurnJob) error {
 				return nil
 			}
 			// Signal typing before the turn work (only for messages we will process).
-			w.publish(job.ConversationID, ports.Event{Type: ports.EventTyping})
+			w.typing(ctx, conv)
 			// The user message is now persisted; run the turn without re-appending.
 			reply, err := w.runner.RunTurnPersisted(ctx, job.ConversationID, job.Message)
 			if err != nil {
-				w.publish(job.ConversationID, ports.Event{Type: ports.EventError, Error: "agent error"})
+				w.deliverError(ctx, conv, "agent error")
 				return classify(fmt.Errorf("worker: run turn (provider_msg_id=%q): %w", job.ProviderMsgID, err))
 			}
-			w.publishReply(ctx, job.ConversationID, reply)
+			// Reload to capture the post-turn state/extracted for delivery.
+			w.deliver(ctx, w.conversation(ctx, job.ConversationID), reply)
 			return nil
 		}
 
 		// No provider id (web flow): persist+run via the standard path. The agent
 		// core appends the user message itself in this branch.
-		w.publish(job.ConversationID, ports.Event{Type: ports.EventTyping})
+		w.typing(ctx, conv)
 		reply, err := w.runner.RunTurn(ctx, job.ConversationID, job.Message)
 		if err != nil {
-			w.publish(job.ConversationID, ports.Event{Type: ports.EventError, Error: "agent error"})
+			w.deliverError(ctx, conv, "agent error")
 			return classify(fmt.Errorf("worker: run turn (conversation=%s): %w", job.ConversationID, err))
 		}
-		w.publishReply(ctx, job.ConversationID, reply)
+		w.deliver(ctx, w.conversation(ctx, job.ConversationID), reply)
 		return nil
 	})
 }

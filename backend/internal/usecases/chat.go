@@ -75,7 +75,7 @@ type ChatUseCase struct {
 	convRepo ports.ConversationRepo
 	runner   ports.AgentRunner
 	locker   ports.Locker
-	broker   ports.Broker
+	repliers ports.ReplierRegistry
 }
 
 // NewChatUseCase wires the synchronous chat path. The locker serializes turns
@@ -83,19 +83,23 @@ type ChatUseCase struct {
 // transport flip lands in Epic 2.3), concurrent requests for the same
 // conversation run one at a time, preserving ordering and avoiding double-writes.
 //
-// broker is the real-time pub/sub seam: the use-case publishes typing/message/
-// error events so a subscribed SSE client receives the turn live. The HTTP
-// response is unchanged — publishing is additive and best-effort. broker may be
-// nil (publishing is then skipped) so tests can omit it.
-func NewChatUseCase(convRepo ports.ConversationRepo, runner ports.AgentRunner, locker ports.Locker, broker ports.Broker) *ChatUseCase {
-	return &ChatUseCase{convRepo: convRepo, runner: runner, locker: locker, broker: broker}
+// repliers is the channel-agnostic reply seam: the use-case delivers typing/
+// message/error events through the conversation's channel (web -> SSE broker) so
+// a subscribed SSE client receives the turn live. The synchronous HTTP response
+// is unchanged — delivery is additive and best-effort. repliers may be nil
+// (delivery is then skipped) so tests can omit it. The /api/chat path only ever
+// creates web conversations, so delivery always routes to the web channel here.
+func NewChatUseCase(convRepo ports.ConversationRepo, runner ports.AgentRunner, locker ports.Locker, repliers ports.ReplierRegistry) *ChatUseCase {
+	return &ChatUseCase{convRepo: convRepo, runner: runner, locker: locker, repliers: repliers}
 }
 
-// publish is a nil-safe Broker.Publish so a missing broker is a no-op.
-func (uc *ChatUseCase) publish(convID string, ev ports.Event) {
-	if uc.broker != nil {
-		uc.broker.Publish(convID, ev)
+// replierFor resolves the Replier for a conversation's channel, or nil when no
+// registry was wired (delivery then becomes a no-op).
+func (uc *ChatUseCase) replierFor(channel string) ports.Replier {
+	if uc.repliers == nil {
+		return nil
 	}
+	return uc.repliers.For(channel)
 }
 
 func (uc *ChatUseCase) RunTurn(ctx context.Context, req ChatRequest) (*ChatResponse, error) {
@@ -112,8 +116,16 @@ func (uc *ChatUseCase) RunTurn(ctx context.Context, req ChatRequest) (*ChatRespo
 		convID = conv.ID
 	}
 
+	// /api/chat only ever serves the web widget, so reply delivery routes to the
+	// web channel (the SSE broker). A minimal conversation carries the id/channel
+	// for the Replier; the completed-turn delivery below uses the reloaded state.
+	convRef := &domain.Conversation{ID: convID, Channel: "web"}
+	replier := uc.replierFor(convRef.Channel)
+
 	// Signal the typing indicator before the (potentially slow) turn work begins.
-	uc.publish(convID, ports.Event{Type: ports.EventTyping})
+	if replier != nil {
+		_ = replier.Typing(ctx, convRef)
+	}
 
 	var reply string
 	err := uc.locker.WithConversationLock(ctx, convID, func(ctx context.Context) error {
@@ -125,16 +137,20 @@ func (uc *ChatUseCase) RunTurn(ctx context.Context, req ChatRequest) (*ChatRespo
 		return nil
 	})
 	if err != nil {
-		// Publish a safe error event (no internal detail / PII) for live clients,
+		// Deliver a safe error event (no internal detail / PII) for live clients,
 		// then return the error to the HTTP caller unchanged.
-		uc.publish(convID, ports.Event{Type: ports.EventError, Error: "agent error"})
+		if replier != nil {
+			_ = replier.Error(ctx, convRef, "agent error")
+		}
 		return nil, err
 	}
 
 	// Reload conversation to get current state and extracted fields
 	conv, err := uc.convRepo.GetByID(ctx, convID)
 	if err != nil {
-		uc.publish(convID, ports.Event{Type: ports.EventError, Error: "agent error"})
+		if replier != nil {
+			_ = replier.Error(ctx, convRef, "agent error")
+		}
 		return nil, err
 	}
 
@@ -145,14 +161,16 @@ func (uc *ChatUseCase) RunTurn(ctx context.Context, req ChatRequest) (*ChatRespo
 		Extracted:      conv.Extracted,
 	}
 
-	// Publish the completed turn so a subscribed SSE client receives it live. The
+	// Deliver the completed turn so a subscribed SSE client receives it live. The
 	// HTTP response below is identical to before — this is purely additive.
-	uc.publish(convID, ports.Event{
-		Type:      ports.EventMessage,
-		Reply:     resp.Reply,
-		State:     resp.State,
-		Extracted: resp.Extracted,
-	})
+	if replier != nil {
+		_ = replier.Deliver(ctx, conv, ports.Event{
+			Type:      ports.EventMessage,
+			Reply:     resp.Reply,
+			State:     resp.State,
+			Extracted: resp.Extracted,
+		})
+	}
 
 	return resp, nil
 }

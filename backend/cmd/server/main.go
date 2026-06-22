@@ -21,6 +21,15 @@ func main() {
 	// SSE stream for live agent replies (long-running server only — not Vercel).
 	mux.HandleFunc("/api/stream", streamhandler.Handler(app.GetContainer().Broker))
 
+	// WhatsApp webhook (M4 part C): PUBLIC routes (no bearer auth) but every POST
+	// is authenticated by X-Hub-Signature-256 over the raw body; the GET handshake
+	// checks hub.verify_token. The channel is inert until WHATSAPP_* is configured
+	// and the Meta number is verified (owner action), but the routes (and signature
+	// enforcement) are always live. Path per API_CONTRACT §8.2.
+	whatsApp := app.GetContainer().WhatsApp
+	mux.HandleFunc("GET /api/webhooks/whatsapp", whatsApp.Verify)
+	mux.HandleFunc("POST /api/webhooks/whatsapp", whatsApp.Receive)
+
 	// Staff/admin auth + RBAC (M3 Epic 3.3): login is public; user management is
 	// admin-only behind bearer-token + role middleware.
 	authSvc := app.GetContainer().Auth

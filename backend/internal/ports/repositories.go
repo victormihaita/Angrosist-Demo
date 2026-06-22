@@ -21,6 +21,20 @@ type ConversationRepo interface {
 	// false mutes the bot for the conversation so the worker short-circuits future
 	// turns (FR-6.1/6.3 handoff). Returns ErrNotFound when no such row exists.
 	SetBotActive(ctx context.Context, id string, active bool) error
+
+	// GetOrCreateByChannelPhone resolves the open conversation for a (channel,
+	// phone) pair — the WhatsApp inbound path keys conversations by sender phone.
+	// It returns the most recent open conversation whose linked contact has the
+	// phone; when none exists it creates a contact carrying the phone and a new
+	// conversation tagged with the given vertical/intent and linked to that
+	// contact. Empty vertical/intent resolve to the defaults. The phone is stored,
+	// never logged. All SQL is parameterized.
+	GetOrCreateByChannelPhone(ctx context.Context, channel, phone, vertical, intent string) (*domain.Conversation, error)
+
+	// ContactPhoneByConversation returns the phone of the conversation's linked
+	// contact (conversations.contact_id), or ErrNotFound when the conversation,
+	// its contact, or the phone is missing. It backs outbound WhatsApp delivery.
+	ContactPhoneByConversation(ctx context.Context, conversationID string) (string, error)
 }
 
 type MessageRepo interface {

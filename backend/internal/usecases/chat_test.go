@@ -40,6 +40,12 @@ func (r *chatConvRepo) UpdateExtracted(ctx context.Context, id string, e map[str
 	return nil
 }
 func (r *chatConvRepo) SetBotActive(ctx context.Context, id string, active bool) error { return nil }
+func (r *chatConvRepo) GetOrCreateByChannelPhone(ctx context.Context, channel, phone, vertical, intent string) (*domain.Conversation, error) {
+	return r.CreateWith(ctx, channel, vertical, intent)
+}
+func (r *chatConvRepo) ContactPhoneByConversation(ctx context.Context, conversationID string) (string, error) {
+	return "", nil
+}
 
 // chatRunner is a no-op AgentRunner.
 type chatRunner struct{ called bool }

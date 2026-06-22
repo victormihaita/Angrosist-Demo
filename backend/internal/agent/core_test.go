@@ -64,6 +64,12 @@ func (m *mockConvRepo) SetBotActive(ctx context.Context, id string, active bool)
 	m.conv.BotActive = active
 	return nil
 }
+func (m *mockConvRepo) GetOrCreateByChannelPhone(ctx context.Context, channel, phone, vertical, intent string) (*domain.Conversation, error) {
+	return m.conv, nil
+}
+func (m *mockConvRepo) ContactPhoneByConversation(ctx context.Context, conversationID string) (string, error) {
+	return "", nil
+}
 
 type mockMsgRepo struct {
 	appended []*domain.Message
