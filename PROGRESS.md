@@ -3,8 +3,9 @@
 > **This is the file to open to see what's done, what's happening, and what's next.** Updated and committed after every unit of work. The full task list lives in `docs/BUILD_PLAN.md`; this is the running status on top of it.
 
 **Last updated:** 2026-06-21
-**Current milestone:** M3 — Angrosist LIVE + dashboard ✅ (ANAF repoint · auth/RBAC · dashboard API + UI · email + handoff · file upload)
-**Next milestone:** M4 — WhatsApp + PalletClearance + seller photos (blocking) + RO/EN. WhatsApp is gated on Meta Business verification (owner action). Deferred to provisioning: GCS adapter, agent `upload_media` tool + seller-photo blocking gate (M4).
+**Current milestone:** M4 — WhatsApp + PalletClearance + photos + i18n ✅ (buildable scope)
+**Next milestone:** M5 — KPIs, GDPR (consent/retention/cascade erasure/audit), backup+restore, E2E+load tests, handover docs.
+**Owner-gated / deferred:** live WhatsApp traffic (Meta Business verification) · GCS FileStore adapter (at GCP provisioning) · WhatsApp 24h-window re-engagement templates + wa.me intent routing.
 **Branches:** `main` = the **Vercel demo** (frozen at pre-today `b5d1b3d`, do not push WIP here). `develop` = **active build** (this is where we work). Push auth fixed (gh active account → `victormihaita`).
 
 ---
@@ -17,7 +18,8 @@
 4. ✅ **M1 — Foundation** — refactor done, full Phase-1 schema (009-023, tested), Terraform + CI/CD as code (dormant), local Docker. _ANAF repoint→M3; GCP provisioning + Meta verification = owner actions._
 5. ✅ **M2 — Agent core + web widget** — LLM port + Gemini/Claude adapters, async runtime, SSE widget + typing
 6. ✅ **M3 — Angrosist + dashboard** — Angrosist LIVE end-to-end (verify → lead → email → dashboard → offer/assign → handoff → upload)
-7. ⏳ **M4 — WhatsApp + PalletClearance + photos + i18n** _(next; WhatsApp gated on Meta verification)_
+7. ✅ **M4 — WhatsApp + PalletClearance + photos + i18n** (buildable scope; live WhatsApp gated on Meta verification)
+8. ⏳ **M5 — KPIs, GDPR, backup/restore, testing, handover** _(next)_
 7. ⬜ **M4 — WhatsApp + PalletClearance + photos + i18n**
 8. ⬜ **M5 — KPIs, GDPR/security, backup, testing, handover**
 9. ⬜ **Phase 2 (M2.1–M2.3)** — SkalYou marketplace
@@ -54,6 +56,7 @@ Legend: ✅ done · ⏳ in progress · ⬜ not started
 
 ## Changelog (newest first)
 
+- **2026-06-22** — **M4 buildable scope complete.** Vertical-aware agent flow engine + PalletClearance buyer/seller flows (sibling typed-request writers); mandatory seller-photo gate + public conversation-scoped photo upload; widget/chat vertical selection + seller photo UI. WhatsApp Cloud API channel: signed webhook (HMAC) + Cloud API sender + channel-agnostic reply routing (web→SSE, whatsapp→send), agent core untouched — inert until WHATSAPP_* + Meta verification. RO/EN i18n (dependency-free, typed keys, language toggle) across the dashboard + public UI. All real-DB tested.
 - **2026-06-21** — **M3 complete.** Dashboard frontend: login + ProtectedRoute + authed client; pipeline (filters + keyset pagination), lead detail (transcript/company/verification/contact) with offer-tracking + assignment; B2B directory, handoff queue, KPI cards; shadcn, code-split. Email + handoff: Mailer port (log/SMTP) + RO/EN templates, confirmation+internal mail on submit, `handoff_to_human` tool (needs_human/bot_active + staff mail + muted-bot guard). File upload: FileStore port (local FS; GCS deferred), DocumentRepo, validated `POST /api/upload`. All real-DB tested.
 - **2026-06-21** — **M3 backend progress.** (1) ANAF→DemoANAF repoint: richer verified company data + CAEN→roles, company_verifications audit row, `ANAF_PROVIDER` selects demoanaf/anaf/demo. (2) Dashboard scaffold: migrations 024 (users.password_hash) + 025 (leads.offer_value/note) + domain view types. (3) Auth + RBAC: bcrypt + HS256 JWT, login, Require/RequireRole middleware, admin bootstrap from env, admin-only users API. (4) Dashboard data API: secured leads pipeline (cursor pagination + filters), lead detail (transcript + typed request + company/verification + contact), offer tracking + assignment (audited), B2B directory, handoff queue, basic KPIs; openapi.yaml updated + validated. All real-DB tested.
 - **2026-06-21** — **M2 complete.** Epic 2.2: Queue port (local + Cloud Tasks push) + `cmd/worker` endpoint + Postgres per-conversation advisory lock + idempotency by provider message ID (real-DB tested). Epic 2.3: in-process SSE `Broker` port + `GET /api/stream` (typing/message/error, heartbeat) publishing from both sync and async paths; frontend `useChat` consumes SSE with a ~1.5s POST fallback (keeps the Vercel demo working). `/api/chat` response unchanged throughout.
