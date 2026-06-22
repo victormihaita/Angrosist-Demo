@@ -135,6 +135,28 @@ func (r *ConversationRepo) GetOrCreateByChannelPhone(ctx context.Context, channe
 		return nil, fmt.Errorf("get-or-create conversation: create contact: %w", err)
 	}
 
+	// GDPR consent capture at WhatsApp FIRST CONTACT (SECURITY.md §7.1): record a
+	// consents row (channel='whatsapp', no HTTP request IP -> NULL) and point the
+	// new contact's active-consent pointer at it, all in this transaction so the
+	// contact never exists without its consent. text_version comes from env
+	// (CONSENT_TEXT_VERSION) via the package-level default resolver; the audit
+	// "consent.captured" row is written by the caller after commit is not needed
+	// here — the webhook path enqueues a turn, and the durable consent proof is the
+	// row itself. The phone is stored, never logged.
+	var consentID string
+	if err := tx.QueryRow(ctx, `
+		INSERT INTO consents (contact_id, text_version, channel, ip)
+		VALUES ($1, $2, 'whatsapp', NULL)
+		RETURNING id
+	`, contactID, consentTextVersion()).Scan(&consentID); err != nil {
+		return nil, fmt.Errorf("get-or-create conversation: capture consent: %w", err)
+	}
+	if _, err := tx.Exec(ctx, `
+		UPDATE contacts SET consent_id = $2 WHERE id = $1
+	`, contactID, consentID); err != nil {
+		return nil, fmt.Errorf("get-or-create conversation: set active consent: %w", err)
+	}
+
 	row = tx.QueryRow(ctx, `
 		INSERT INTO conversations (channel, state, extracted, vertical, intent, contact_id)
 		VALUES ($1, 'greeting', '{}', $2, $3, $4)

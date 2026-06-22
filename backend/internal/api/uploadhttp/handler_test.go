@@ -42,6 +42,12 @@ func (f *fakeStore) URL(key string) string { return "/uploads/" + key }
 func (f *fakeStore) SignedURL(_ context.Context, key string, _ time.Duration) (string, error) {
 	return "/uploads/" + key, nil
 }
+func (f *fakeStore) Delete(_ context.Context, key string) error {
+	f.mu.Lock()
+	delete(f.puts, key)
+	f.mu.Unlock()
+	return nil
+}
 
 var _ ports.FileStore = (*fakeStore)(nil)
 

@@ -7,6 +7,7 @@ import (
 
 	httputil "github.com/angrosist/demo/internal/api/httputil"
 	"github.com/angrosist/demo/internal/app"
+	"github.com/angrosist/demo/internal/reqmeta"
 	"github.com/angrosist/demo/internal/usecases"
 )
 
@@ -58,7 +59,13 @@ func Handler(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	resp, err := app.GetContainer().Chat.RunTurn(r.Context(), req)
+	// Thread the client IP down to consent capture (GDPR proof, SECURITY.md §7.1).
+	// It is read from X-Forwarded-For / RemoteAddr and carried via the request
+	// context to the agent submit, where a newly created contact records it on its
+	// consents row. No PII is logged; the IP is stored only.
+	ctx := reqmeta.WithClientIP(r.Context(), reqmeta.ClientIPFromRequest(r))
+
+	resp, err := app.GetContainer().Chat.RunTurn(ctx, req)
 	if err != nil {
 		httputil.WriteError(w, http.StatusInternalServerError, "agent error: "+err.Error())
 		return

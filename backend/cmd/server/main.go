@@ -51,6 +51,16 @@ func main() {
 		httputil.HandleOptions(w, r)
 	})
 
+	// GDPR right-to-erasure (M5): ADMIN-ONLY (RBAC matrix, SECURITY.md §3 — erasure
+	// is admin-only). Runs the cascade-erasure of a data subject (contact_id|email)
+	// and returns the counts report. The audit trail is redacted, not deleted, and
+	// public/company data is preserved.
+	gdpr := app.GetContainer().GDPR
+	mux.HandleFunc("POST /api/gdpr/erasure", authSvc.Auth.RequireRole(domain.RoleAdmin, gdpr.Erasure))
+	mux.HandleFunc("OPTIONS /api/gdpr/erasure", func(w http.ResponseWriter, r *http.Request) {
+		httputil.HandleOptions(w, r)
+	})
+
 	// Public, conversation-scoped seller-photo upload (M4 PalletClearance): the
 	// widget is public, so this route is UNAUTHENTICATED but scoped to existing
 	// PalletClearance seller conversations (validated in the handler). It backs the

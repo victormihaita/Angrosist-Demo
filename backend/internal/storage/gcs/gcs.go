@@ -64,4 +64,11 @@ func (s *Store) SignedURL(context.Context, string, time.Duration) (string, error
 	return "", ErrNotConfigured
 }
 
+// Delete is not yet implemented (provisioning deferred). At provisioning,
+// implement it as bucket.Object(key).Delete(ctx), treating storage.ErrObjectNotExist
+// as success (idempotent, per the FileStore.Delete contract). The GDPR erasure
+// path deletes blobs best-effort, so this returning ErrNotConfigured surfaces a
+// misconfiguration loudly without faking success.
+func (s *Store) Delete(context.Context, string) error { return ErrNotConfigured }
+
 var _ ports.FileStore = (*Store)(nil)

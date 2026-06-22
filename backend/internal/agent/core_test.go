@@ -126,8 +126,9 @@ func (m *mockCompanyRepo) Detail(ctx context.Context, id string) (*domain.Compan
 }
 
 type mockContactRepo struct {
-	created []*domain.Contact
-	updated []*domain.Contact
+	created          []*domain.Contact
+	updated          []*domain.Contact
+	activeConsentFor map[string]string // contactID -> consentID
 }
 
 func (m *mockContactRepo) Create(ctx context.Context, contact *domain.Contact) error {
@@ -138,6 +139,16 @@ func (m *mockContactRepo) Create(ctx context.Context, contact *domain.Contact) e
 func (m *mockContactRepo) Update(ctx context.Context, contact *domain.Contact) error {
 	m.updated = append(m.updated, contact)
 	return nil
+}
+func (m *mockContactRepo) SetActiveConsent(ctx context.Context, contactID, consentID string) error {
+	if m.activeConsentFor == nil {
+		m.activeConsentFor = map[string]string{}
+	}
+	m.activeConsentFor[contactID] = consentID
+	return nil
+}
+func (m *mockContactRepo) FindIDByEmail(ctx context.Context, email string) (string, error) {
+	return "", ports.ErrNotFound
 }
 
 type mockLeadRepo struct {

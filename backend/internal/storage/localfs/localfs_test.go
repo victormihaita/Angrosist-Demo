@@ -29,6 +29,38 @@ func TestPut_WritesBytesUnderRoot(t *testing.T) {
 	}
 }
 
+func TestDelete_RemovesFileAndIsIdempotent(t *testing.T) {
+	root := t.TempDir()
+	s := New(root)
+	key := "lead/33333333-3333-3333-3333-333333333333/uuid-doc.pdf"
+
+	if err := s.Put(context.Background(), key, "application/pdf", bytes.NewReader([]byte("pdfdata"))); err != nil {
+		t.Fatalf("Put: %v", err)
+	}
+	full := filepath.Join(root, filepath.FromSlash(key))
+	if _, err := os.Stat(full); err != nil {
+		t.Fatalf("file should exist after Put: %v", err)
+	}
+
+	// First delete removes the file.
+	if err := s.Delete(context.Background(), key); err != nil {
+		t.Fatalf("Delete: %v", err)
+	}
+	if _, err := os.Stat(full); !os.IsNotExist(err) {
+		t.Fatalf("file should be gone after Delete, stat err = %v", err)
+	}
+
+	// Idempotent: deleting a missing key is not an error (retried erasure).
+	if err := s.Delete(context.Background(), key); err != nil {
+		t.Fatalf("Delete (idempotent) returned error: %v", err)
+	}
+
+	// A traversal-unsafe key is rejected.
+	if err := s.Delete(context.Background(), "../escape"); err == nil {
+		t.Fatal("Delete should reject a traversal key")
+	}
+}
+
 func TestOpen_RoundTrip(t *testing.T) {
 	s := New(t.TempDir())
 	key := "photo/22222222-2222-2222-2222-222222222222/uuid-p.png"

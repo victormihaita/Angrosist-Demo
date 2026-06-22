@@ -145,6 +145,52 @@ var ErrNotFound = errors.New("not found")
 type ContactRepo interface {
 	Create(ctx context.Context, contact *domain.Contact) error
 	Update(ctx context.Context, contact *domain.Contact) error
+	// SetActiveConsent points contacts.consent_id at the given consent (the
+	// deferred circular FK from migration 015 — the contact's *current* consent).
+	// It is a no-op-safe parameterized UPDATE; a missing contact returns
+	// ErrNotFound.
+	SetActiveConsent(ctx context.Context, contactID, consentID string) error
+	// FindIDByEmail resolves the most recent contact id carrying the given email,
+	// or ErrNotFound when none exists. It backs the erasure-by-email convenience;
+	// the email is matched case-insensitively and never logged.
+	FindIDByEmail(ctx context.Context, email string) (string, error)
+}
+
+// ConsentRepo persists GDPR consent events (consents table, migration 015,
+// invariant #7 / NFR-3). Consent is personal data: a row carries the IP at
+// capture as proof and CASCADE-deletes with its contact. The full history lives
+// here; the contact's active consent pointer is set via ContactRepo.SetActiveConsent.
+// All statements are parameterized.
+type ConsentRepo interface {
+	// Create inserts one consent row, writing the assigned id/given_at/created_at
+	// back onto c. An empty IP is stored as SQL NULL (the WhatsApp path).
+	Create(ctx context.Context, c *domain.Consent) error
+}
+
+// ErasureRepo performs the transactional database half of the GDPR right-to-
+// erasure cascade (SECURITY.md §7.4, DATA_MODEL_DDL §4). It owns its own
+// transaction internally so no DB handle/tx type ever crosses the port boundary
+// (hexagonal). The use-case (ErasureService) drives it, then deletes the returned
+// blob keys via the FileStore and writes the final audit row.
+//
+// In one transaction Erase:
+//   - collects every documents.gcs_key reachable from the contact (its leads and
+//     their listings/sourcing_requests, and the contact's conversations) BEFORE
+//     deleting anything;
+//   - anonymizes (redacted=true, PII stripped from meta) the activity_logs rows
+//     referencing the erased entities — it does NOT delete the audit trail;
+//   - deletes those documents index rows (no DB FK cascade reaches them);
+//   - DELETEs the contact, relying on the FK CASCADE chain (consents,
+//     conversations→messages, leads→sourcing_requests|listings) and NOT touching
+//     companies (public data; only SET NULL on links).
+//
+// It returns the collected blob keys (for out-of-band FileStore deletion) and a
+// counts report. companies are never deleted here.
+type ErasureRepo interface {
+	// Erase runs the cascade for contactID. It returns ErrNotFound when no such
+	// contact exists. blobKeys are the documents.gcs_key values to delete from the
+	// FileStore after the transaction commits.
+	Erase(ctx context.Context, contactID string) (report domain.ErasureReport, blobKeys []string, err error)
 }
 
 type SourcingRepo interface {

@@ -150,6 +150,20 @@ func (s *Store) SignedURL(_ context.Context, key string, _ time.Duration) (strin
 	return u, nil
 }
 
+// Delete removes the file at key under the root. It is idempotent: a missing file
+// (or a key that resolves to nothing) is not an error, so a retried GDPR erasure
+// never fails on an already-deleted blob. A traversal-unsafe key is rejected.
+func (s *Store) Delete(_ context.Context, key string) error {
+	full, err := s.resolve(key)
+	if err != nil {
+		return err
+	}
+	if err := os.Remove(full); err != nil && !os.IsNotExist(err) {
+		return fmt.Errorf("localfs: delete %q: %w", key, err)
+	}
+	return nil
+}
+
 // Open returns a reader for a stored object, used by the file-serving route. The
 // caller is responsible for closing it.
 func (s *Store) Open(key string) (io.ReadCloser, error) {

@@ -16,6 +16,7 @@ import (
 	geminillm "github.com/angrosist/demo/internal/agent/llm/gemini"
 	"github.com/angrosist/demo/internal/api/authhttp"
 	"github.com/angrosist/demo/internal/api/dashboardhttp"
+	"github.com/angrosist/demo/internal/api/gdprhttp"
 	"github.com/angrosist/demo/internal/api/uploadhttp"
 	"github.com/angrosist/demo/internal/api/whatsapphttp"
 	"github.com/angrosist/demo/internal/auth"
@@ -80,6 +81,10 @@ type Container struct {
 	// /api/upload). Mounted behind the staff auth middleware in cmd/server.
 	Upload *uploadhttp.Service
 
+	// GDPR is the admin-only data-subject-rights HTTP service (POST
+	// /api/gdpr/erasure). Mounted behind the admin RBAC middleware in cmd/server.
+	GDPR *gdprhttp.Service
+
 	// Photos is the PUBLIC, conversation-scoped seller-photo upload service
 	// (POST /api/conversations/{id}/photos). Mounted WITHOUT auth (the widget is
 	// public) but scoped to PalletClearance seller conversations. It backs the
@@ -118,6 +123,8 @@ func Init() {
 		userRepo := pgadapter.NewUserRepo()
 		activityRepo := pgadapter.NewActivityLogRepo()
 		docRepo := pgadapter.NewDocumentRepo()
+		consentRepo := pgadapter.NewConsentRepo()
+		erasureRepo := pgadapter.NewErasureRepo()
 		verifier := newVerifier()
 
 		// Auth: HS256 JWT issuer (fail fast if JWT_SECRET is unset) + user repo.
@@ -140,12 +147,14 @@ func Init() {
 				Listing:      listingRepo,
 				BuyerProfile: buyerProfileRepo,
 				Document:     docRepo,
+				Consent:      consentRepo,
 			},
 			agent.Notifications{
-				Mailer:      mailer,
-				ActivityLog: activityRepo,
-				StaffNotify: os.Getenv("STAFF_NOTIFY_EMAIL"),
-				DefaultLang: os.Getenv("DEFAULT_LANG"),
+				Mailer:             mailer,
+				ActivityLog:        activityRepo,
+				StaffNotify:        os.Getenv("STAFF_NOTIFY_EMAIL"),
+				DefaultLang:        os.Getenv("DEFAULT_LANG"),
+				ConsentTextVersion: os.Getenv("CONSENT_TEXT_VERSION"),
 			},
 		)
 
@@ -193,6 +202,12 @@ func Init() {
 		leadsUC := usecases.NewLeadUseCase(leadRepo, userRepo, activityRepo)
 		companiesUC := usecases.NewCompanyUseCase(companyRepo)
 
+		// GDPR right-to-erasure: the use-case orchestrates the transactional DB
+		// cascade (ErasureRepo) + best-effort blob deletion (FileStore) + the proof
+		// audit row (ActivityLogRepo). companies/public data are preserved; the audit
+		// trail is redacted, never deleted (SECURITY.md §7.4). FileStore is wired just
+		// below; we build the service after it.
+
 		// Document storage: FileStore behind the port (localfs in dev/docker, GCS
 		// stub until provisioning) + the document index repo + the upload service.
 		fileStore, localStore := newFileStore()
@@ -207,6 +222,10 @@ func Init() {
 			maxUploadBytes(), maxPhotosPerConversation(),
 		)
 
+		// GDPR erasure use-case + admin-only HTTP service (now that FileStore exists).
+		erasureSvc := usecases.NewErasureService(erasureRepo, contactRepo, fileStore, activityRepo)
+		gdprSvc := gdprhttp.NewService(erasureSvc)
+
 		container = &Container{
 			DB:        &dbPinger{pool: pool},
 			Chat:      usecases.NewChatUseCase(convRepo, runner, locker, replierRegistry),
@@ -219,6 +238,7 @@ func Init() {
 			Auth:      authSvc,
 			Dashboard: dashboardhttp.NewService(leadsUC, companiesUC),
 			Upload:    uploadSvc,
+			GDPR:      gdprSvc,
 			Photos:    photoSvc,
 			FileStore: fileStore,
 			LocalFS:   localStore,

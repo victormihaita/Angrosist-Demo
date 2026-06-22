@@ -38,4 +38,12 @@ type FileStore interface {
 	// dashboard/portal will fetch private objects in prod (GCS signed GET URLs).
 	// The local adapter ignores ttl and returns the same path as URL (dev only).
 	SignedURL(ctx context.Context, key string, ttl time.Duration) (string, error)
+
+	// Delete removes the object at key from durable storage. It backs the GDPR
+	// right-to-erasure cascade (SECURITY.md §7.4): the blob behind a documents
+	// row must be deleted via this port because Postgres cannot remove a GCS
+	// object. Implementations MUST be idempotent — deleting a missing key is not
+	// an error (a retried erasure must not fail). The local adapter removes the
+	// file; the GCS stub returns ErrNotConfigured until provisioning lands.
+	Delete(ctx context.Context, key string) error
 }

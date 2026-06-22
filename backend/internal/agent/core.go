@@ -37,7 +37,12 @@ type Core struct {
 	// legacy/test wirings (nil); when nil the seller submit treats the gate as
 	// unconfigured rather than blocking, but the production wiring always sets it.
 	documentRepo ports.DocumentRepo
-	verifier     ports.CompanyDataProvider
+	// consentRepo captures GDPR consent when a contact is first created on lead
+	// submission (consents row + contacts.consent_id pointer + a consent.captured
+	// audit row). Optional (nil in legacy/test wirings): consent capture is then
+	// skipped, logged; the production wiring always sets it. See SECURITY.md §7.1.
+	consentRepo ports.ConsentRepo
+	verifier    ports.CompanyDataProvider
 
 	// flows resolves the active Flow per conversation (vertical, intent). When nil
 	// (legacy/test wirings that pass only the positional repos), the core falls
@@ -54,6 +59,9 @@ type Core struct {
 	staffNotify string
 	// defaultLang is the locale used when the contact's language is unknown.
 	defaultLang string
+	// consentTextVersion is the consent text/version recorded on capture
+	// (CONSENT_TEXT_VERSION). Empty resolves to domain.DefaultConsentTextVersion.
+	consentTextVersion string
 }
 
 // Notifications bundles the optional email side-effect dependencies so they can
@@ -64,6 +72,10 @@ type Notifications struct {
 	ActivityLog ports.ActivityLogRepo
 	StaffNotify string
 	DefaultLang string
+	// ConsentTextVersion is the consent text/version recorded when consent is
+	// captured on contact creation (CONSENT_TEXT_VERSION). Empty resolves to
+	// domain.DefaultConsentTextVersion.
+	ConsentTextVersion string
 }
 
 // Repos bundles the per-vertical typed-request writers used by the flow Submit
@@ -77,6 +89,10 @@ type Repos struct {
 	// of kind='photo' documents). Optional: when nil the seller submit cannot enforce
 	// the gate and reports it as unconfigured.
 	Document ports.DocumentRepo
+	// Consent captures GDPR consent on contact creation (consents row +
+	// contacts.consent_id pointer). Optional: when nil consent capture is skipped
+	// (logged); the production wiring always sets it. See SECURITY.md §7.1.
+	Consent ports.ConsentRepo
 }
 
 // New constructs the agent core with the LLM port and the repository/service
@@ -142,22 +158,24 @@ func NewWithFlows(
 		flows = NewFlowRegistry()
 	}
 	return &Core{
-		llm:              llm,
-		convRepo:         convRepo,
-		msgRepo:          msgRepo,
-		companyRepo:      companyRepo,
-		contactRepo:      contactRepo,
-		leadRepo:         leadRepo,
-		sourcingRepo:     sourcingRepo,
-		listingRepo:      repos.Listing,
-		buyerProfileRepo: repos.BuyerProfile,
-		documentRepo:     repos.Document,
-		verifier:         verifier,
-		flows:            flows,
-		mailer:           n.Mailer,
-		activityLog:      n.ActivityLog,
-		staffNotify:      n.StaffNotify,
-		defaultLang:      lang,
+		llm:                llm,
+		convRepo:           convRepo,
+		msgRepo:            msgRepo,
+		companyRepo:        companyRepo,
+		contactRepo:        contactRepo,
+		leadRepo:           leadRepo,
+		sourcingRepo:       sourcingRepo,
+		listingRepo:        repos.Listing,
+		buyerProfileRepo:   repos.BuyerProfile,
+		documentRepo:       repos.Document,
+		consentRepo:        repos.Consent,
+		verifier:           verifier,
+		flows:              flows,
+		mailer:             n.Mailer,
+		activityLog:        n.ActivityLog,
+		staffNotify:        n.StaffNotify,
+		defaultLang:        lang,
+		consentTextVersion: n.ConsentTextVersion,
 	}
 }
 
