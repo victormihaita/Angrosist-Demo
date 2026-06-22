@@ -110,6 +110,13 @@ func (w *TurnWorker) deliverError(ctx context.Context, conv *domain.Conversation
 	}
 }
 
+// Note on the max-turns cap: the synchronous /api/chat path enforces the
+// MAX_TURNS_PER_CONVERSATION cost cap in ChatUseCase before any LLM call. The
+// WhatsApp/worker path is not capped here yet — it carries channel-side abuse
+// controls (Meta rate limits) and would need the MessageRepo count threaded in;
+// when WhatsApp volume warrants it, add the same CountByConversationRole check at
+// the top of the locked section before RunTurnPersisted.
+//
 // Process runs one job. Concurrency for the same conversation is serialized by
 // the lock; idempotency is enforced inside the lock via the provider message id.
 func (w *TurnWorker) Process(ctx context.Context, job ports.TurnJob) error {

@@ -58,6 +58,12 @@ type MessageRepo interface {
 	// the check-and-mark is a single atomic operation safe under at-least-once
 	// delivery. providerMsgID must be non-empty.
 	ClaimProviderMsg(ctx context.Context, conversationID, providerMsgID, content string) (claimed bool, err error)
+	// CountByConversationRole returns how many messages a conversation has with the
+	// given role (e.g. "user"). It is a cheap, parameterized COUNT that backs the
+	// max-turns-per-conversation cost cap (SECURITY.md §1.1 D): the chat use-case
+	// refuses a new user turn once the count reaches the configured cap, BEFORE any
+	// paid LLM call. role must be non-empty.
+	CountByConversationRole(ctx context.Context, conversationID, role string) (int, error)
 }
 
 type LeadRepo interface {

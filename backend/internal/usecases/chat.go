@@ -2,11 +2,19 @@ package usecases
 
 import (
 	"context"
+	"errors"
 	"fmt"
 
 	"github.com/angrosist/demo/internal/domain"
 	"github.com/angrosist/demo/internal/ports"
 )
+
+// ErrTooManyTurns is returned by ChatUseCase.RunTurn when a conversation has
+// already reached the configured max-turns-per-conversation cap. It bounds LLM
+// cost-exhaustion (SECURITY.md §1.1 D): the error is raised BEFORE any paid LLM
+// call. The HTTP entrypoint maps it to a friendly 429. Callers test for it with
+// errors.Is.
+var ErrTooManyTurns = errors.New("conversation turn limit reached")
 
 // ChatRequest is the inbound chat-turn payload. Vertical and Intent are optional:
 // when omitted (the legacy widget sends neither) they default to the Angrosist
@@ -76,6 +84,12 @@ type ChatUseCase struct {
 	runner   ports.AgentRunner
 	locker   ports.Locker
 	repliers ports.ReplierRegistry
+	// msgRepo backs the max-turns cost cap (CountByConversationRole). May be nil
+	// (the cap is then disabled) so tests can omit it.
+	msgRepo ports.MessageRepo
+	// maxTurns caps the number of USER turns a single conversation may run before
+	// /api/chat refuses further input (SECURITY.md §1.1). 0 = unlimited.
+	maxTurns int
 }
 
 // NewChatUseCase wires the synchronous chat path. The locker serializes turns
@@ -93,6 +107,17 @@ func NewChatUseCase(convRepo ports.ConversationRepo, runner ports.AgentRunner, l
 	return &ChatUseCase{convRepo: convRepo, runner: runner, locker: locker, repliers: repliers}
 }
 
+// WithTurnCap enables the max-turns-per-conversation cost cap on the use-case and
+// returns it for chaining. msgRepo supplies the user-message count; maxTurns is
+// the limit (<= 0 disables the cap, preserving existing behavior). It is wired in
+// the composition root (container) so the public entrypoint refuses runaway
+// conversations before any paid LLM call (SECURITY.md §1.1).
+func (uc *ChatUseCase) WithTurnCap(msgRepo ports.MessageRepo, maxTurns int) *ChatUseCase {
+	uc.msgRepo = msgRepo
+	uc.maxTurns = maxTurns
+	return uc
+}
+
 // replierFor resolves the Replier for a conversation's channel, or nil when no
 // registry was wired (delivery then becomes a no-op).
 func (uc *ChatUseCase) replierFor(channel string) ports.Replier {
@@ -100,6 +125,24 @@ func (uc *ChatUseCase) replierFor(channel string) ports.Replier {
 		return nil
 	}
 	return uc.repliers.For(channel)
+}
+
+// checkTurnCap returns ErrTooManyTurns when the conversation has already reached
+// the configured max-turns cap. It is a no-op (nil) when the cap is disabled
+// (maxTurns <= 0) or no message repo is wired. The count is the number of USER
+// messages already recorded; once it reaches the cap, the next turn is refused.
+func (uc *ChatUseCase) checkTurnCap(ctx context.Context, convID string) error {
+	if uc.maxTurns <= 0 || uc.msgRepo == nil {
+		return nil
+	}
+	n, err := uc.msgRepo.CountByConversationRole(ctx, convID, domain.MessageRoleUser)
+	if err != nil {
+		return fmt.Errorf("chat: count user turns: %w", err)
+	}
+	if n >= uc.maxTurns {
+		return fmt.Errorf("%w: %d/%d", ErrTooManyTurns, n, uc.maxTurns)
+	}
+	return nil
 }
 
 func (uc *ChatUseCase) RunTurn(ctx context.Context, req ChatRequest) (*ChatResponse, error) {
@@ -114,6 +157,11 @@ func (uc *ChatUseCase) RunTurn(ctx context.Context, req ChatRequest) (*ChatRespo
 			return nil, err
 		}
 		convID = conv.ID
+	} else if err := uc.checkTurnCap(ctx, convID); err != nil {
+		// Cost cap: an existing conversation that already hit the limit is refused
+		// here, before the lock and before any paid LLM call. A new conversation
+		// (convID == "") starts at zero user turns, so it is never capped.
+		return nil, err
 	}
 
 	// /api/chat only ever serves the web widget, so reply delivery routes to the

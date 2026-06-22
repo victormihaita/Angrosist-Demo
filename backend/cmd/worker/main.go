@@ -24,8 +24,19 @@ import (
 func main() {
 	c := app.GetContainer()
 
+	// The push endpoint is bearer-authenticated with WORKER_AUTH_TOKEN (threaded
+	// via the container; the Cloud Tasks adapter already sends this token). When the
+	// token is unset (local/dev — the in-process queue calls the processor directly
+	// and never reaches this HTTP route) the check is disabled and we warn loudly.
+	h := worker.NewAuthenticatedHandler(c.Worker, c.WorkerAuthToken)
+	if !h.AuthConfigured() {
+		log.Println("worker: WARNING the push endpoint /worker/turn is UNAUTHENTICATED " +
+			"(WORKER_AUTH_TOKEN unset). In production it MUST be ingress-restricted and " +
+			"behind Cloud Tasks OIDC; set WORKER_AUTH_TOKEN for the portable bearer control.")
+	}
+
 	mux := http.NewServeMux()
-	mux.Handle("/worker/turn", worker.NewHandler(c.Worker))
+	mux.Handle("/worker/turn", h.TurnRoute())
 	mux.HandleFunc("/healthz", func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusOK)
 		_, _ = w.Write([]byte("ok"))

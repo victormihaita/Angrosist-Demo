@@ -7,6 +7,7 @@ import (
 	healthhandler "github.com/angrosist/demo/api/health"
 	streamhandler "github.com/angrosist/demo/api/stream"
 	httputil "github.com/angrosist/demo/internal/api/httputil"
+	"github.com/angrosist/demo/internal/api/ratelimit"
 	"github.com/angrosist/demo/internal/app"
 	"github.com/angrosist/demo/internal/domain"
 )
@@ -28,8 +29,15 @@ import (
 func Router(c *app.Container) http.Handler {
 	mux := http.NewServeMux()
 
+	// Per-client-IP rate limiter for the PUBLIC, expensive/abusable routes only
+	// (POST /api/chat, POST /api/conversations/{id}/photos). The SSE stream and the
+	// authed dashboard routes are intentionally NOT wrapped. Per-instance; multi-
+	// instance prod additionally relies on Cloudflare WAF / a Redis-backed limiter
+	// behind this same middleware seam.
+	rl := c.RateLimiter
+
 	mux.HandleFunc("/api/health", healthhandler.Handler)
-	mux.HandleFunc("/api/chat", chathandler.Handler)
+	mux.HandleFunc("/api/chat", ratelimit.RateLimit(rl, chathandler.Handler))
 	// SSE stream for live agent replies (long-running server only — not Vercel).
 	mux.HandleFunc("/api/stream", streamhandler.Handler(c.Broker))
 
@@ -73,7 +81,7 @@ func Router(c *app.Container) http.Handler {
 	// widget is public, so this route is UNAUTHENTICATED but scoped to existing
 	// PalletClearance seller conversations (validated in the handler).
 	photos := c.Photos
-	mux.HandleFunc("POST /api/conversations/{id}/photos", photos.Upload)
+	mux.HandleFunc("POST /api/conversations/{id}/photos", ratelimit.RateLimit(rl, photos.Upload))
 	mux.HandleFunc("OPTIONS /api/conversations/{id}/photos", func(w http.ResponseWriter, r *http.Request) {
 		httputil.HandleOptions(w, r)
 	})

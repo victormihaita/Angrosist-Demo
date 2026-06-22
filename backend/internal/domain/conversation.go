@@ -53,6 +53,16 @@ type Conversation struct {
 	UpdatedAt time.Time
 }
 
+// Message roles. These mirror the values persisted in messages.role and the
+// roles the LLM port expects, so callers (e.g. the max-turns counter) avoid
+// magic strings.
+const (
+	// MessageRoleUser is an inbound user/visitor message.
+	MessageRoleUser = "user"
+	// MessageRoleAssistant is an outbound agent message.
+	MessageRoleAssistant = "assistant"
+)
+
 type Message struct {
 	ID             string    `json:"id"`
 	ConversationID string    `json:"conversation_id"`

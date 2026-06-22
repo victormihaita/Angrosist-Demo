@@ -2,6 +2,7 @@ package handler
 
 import (
 	"encoding/json"
+	"errors"
 	"log"
 	"net/http"
 	"strings"
@@ -68,6 +69,14 @@ func Handler(w http.ResponseWriter, r *http.Request) {
 
 	resp, err := app.GetContainer().Chat.RunTurn(ctx, req)
 	if err != nil {
+		// Cost cap: a conversation that hit the max-turns limit is refused with a
+		// friendly 429 and no LLM call was made. This is expected client behavior,
+		// not a server fault.
+		if errors.Is(err, usecases.ErrTooManyTurns) {
+			httputil.WriteError(w, http.StatusTooManyRequests,
+				"this conversation has reached its message limit; please start a new chat")
+			return
+		}
 		// Log the detail server-side; return a generic message so internal error
 		// text (DB/LLM/host fragments) never reaches an unauthenticated caller.
 		log.Printf("chat: agent turn failed: %v", err)

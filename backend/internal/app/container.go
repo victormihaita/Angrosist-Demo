@@ -18,6 +18,7 @@ import (
 	"github.com/angrosist/demo/internal/api/authhttp"
 	"github.com/angrosist/demo/internal/api/dashboardhttp"
 	"github.com/angrosist/demo/internal/api/gdprhttp"
+	"github.com/angrosist/demo/internal/api/ratelimit"
 	"github.com/angrosist/demo/internal/api/uploadhttp"
 	"github.com/angrosist/demo/internal/api/whatsapphttp"
 	"github.com/angrosist/demo/internal/auth"
@@ -100,6 +101,19 @@ type Container struct {
 	// (nil otherwise). cmd/server reads it to register the GET /uploads/{key}
 	// file-serving route; prod serves objects via GCS signed URLs instead.
 	LocalFS *localfs.Store
+
+	// RateLimiter is the per-client-IP token-bucket limiter applied (via the
+	// ratelimit middleware) to the PUBLIC, expensive routes (POST /api/chat, POST
+	// /api/conversations/{id}/photos). Configured by RATE_LIMIT_RPM/RATE_LIMIT_BURST;
+	// a non-positive RPM yields a disabled (always-allow) limiter. Per-instance —
+	// multi-instance prod relies on Cloudflare WAF or a Redis-backed limiter behind
+	// the same middleware seam.
+	RateLimiter *ratelimit.Limiter
+
+	// WorkerAuthToken is the shared-secret bearer (WORKER_AUTH_TOKEN) the worker
+	// push endpoint verifies and the Cloud Tasks adapter sends. Empty disables the
+	// check (local/dev). cmd/worker reads it to build the authenticated handler.
+	WorkerAuthToken string
 }
 
 var (
@@ -227,9 +241,19 @@ func Init() {
 		erasureSvc := usecases.NewErasureService(erasureRepo, contactRepo, fileStore, activityRepo)
 		gdprSvc := gdprhttp.NewService(erasureSvc)
 
+		// Per-client-IP rate limiter for the public, expensive routes. Disabled when
+		// RATE_LIMIT_RPM <= 0. A background goroutine reclaims idle buckets.
+		rateLimiter := ratelimit.New(rateLimitRPM(), rateLimitBurst())
+		rateLimiter.StartCleanup(0, make(chan struct{}))
+
+		// Max-turns-per-conversation cost cap on the synchronous chat path. Enforced
+		// before any paid LLM call; 0 (or unset) leaves it unlimited.
+		chatUC := usecases.NewChatUseCase(convRepo, runner, locker, replierRegistry).
+			WithTurnCap(msgRepo, maxTurnsPerConversation())
+
 		container = &Container{
 			DB:        &dbPinger{pool: pool},
-			Chat:      usecases.NewChatUseCase(convRepo, runner, locker, replierRegistry),
+			Chat:      chatUC,
 			Leads:     leadsUC,
 			Locker:    locker,
 			Worker:    worker,
@@ -243,6 +267,9 @@ func Init() {
 			Photos:    photoSvc,
 			FileStore: fileStore,
 			LocalFS:   localStore,
+
+			RateLimiter:     rateLimiter,
+			WorkerAuthToken: os.Getenv("WORKER_AUTH_TOKEN"),
 		}
 
 		// Idempotent admin bootstrap from ADMIN_EMAIL/ADMIN_PASSWORD (if both set).
@@ -294,6 +321,54 @@ func maxPhotosPerConversation() int {
 		}
 	}
 	return 0
+}
+
+// defaultRateLimitRPM / defaultMaxTurns are the safe baseline caps applied when
+// the corresponding env vars are unset. They are generous enough not to disrupt a
+// normal qualification conversation while still bounding abuse / LLM spend.
+const (
+	defaultRateLimitRPM = 60
+	defaultMaxTurns     = 40
+)
+
+// rateLimitRPM reads RATE_LIMIT_RPM (requests/min/IP for the public expensive
+// routes). Unset => defaultRateLimitRPM; 0 explicitly DISABLES the limiter; a
+// negative/garbage value also disables it.
+func rateLimitRPM() int {
+	v := os.Getenv("RATE_LIMIT_RPM")
+	if v == "" {
+		return defaultRateLimitRPM
+	}
+	n, err := strconv.Atoi(v)
+	if err != nil {
+		return defaultRateLimitRPM
+	}
+	return n
+}
+
+// rateLimitBurst reads RATE_LIMIT_BURST (the instantaneous burst capacity). A
+// non-positive/unset value lets the limiter default it to the per-minute rate.
+func rateLimitBurst() int {
+	if v := os.Getenv("RATE_LIMIT_BURST"); v != "" {
+		if n, err := strconv.Atoi(v); err == nil && n > 0 {
+			return n
+		}
+	}
+	return 0
+}
+
+// maxTurnsPerConversation reads MAX_TURNS_PER_CONVERSATION (max USER turns before
+// /api/chat refuses further input). Unset => defaultMaxTurns; 0 = unlimited.
+func maxTurnsPerConversation() int {
+	v := os.Getenv("MAX_TURNS_PER_CONVERSATION")
+	if v == "" {
+		return defaultMaxTurns
+	}
+	n, err := strconv.Atoi(v)
+	if err != nil {
+		return defaultMaxTurns
+	}
+	return n
 }
 
 // newQueue selects the Queue adapter from QUEUE_PROVIDER. "local" (default) runs

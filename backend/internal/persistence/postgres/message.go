@@ -95,6 +95,26 @@ func (r *MessageRepo) ClaimProviderMsg(ctx context.Context, conversationID, prov
 	return tag.RowsAffected() == 1, nil
 }
 
+// CountByConversationRole returns the number of messages for a conversation with
+// the given role. It backs the max-turns-per-conversation cost cap (SECURITY.md
+// §1.1): the chat use-case calls it before running a turn and refuses once the
+// user-message count reaches the configured cap. The SQL is parameterized; an
+// empty role yields 0 without a query.
+func (r *MessageRepo) CountByConversationRole(ctx context.Context, conversationID, role string) (int, error) {
+	if role == "" {
+		return 0, nil
+	}
+	var n int
+	err := GetPool().QueryRow(ctx, `
+		SELECT count(*) FROM messages
+		WHERE conversation_id = $1 AND role = $2
+	`, conversationID, role).Scan(&n)
+	if err != nil {
+		return 0, err
+	}
+	return n, nil
+}
+
 func nullBytes(b []byte) any {
 	if len(b) == 0 {
 		return nil

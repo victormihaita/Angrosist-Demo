@@ -69,6 +69,9 @@ func (r *fakeMsgRepo) ClaimProviderMsg(ctx context.Context, conversationID, prov
 	r.claimed[providerMsgID] = true
 	return true, nil
 }
+func (r *fakeMsgRepo) CountByConversationRole(ctx context.Context, conversationID, role string) (int, error) {
+	return 0, nil
+}
 
 // recordingReplier records the lifecycle calls a turn delivers through it.
 type recordingReplier struct {

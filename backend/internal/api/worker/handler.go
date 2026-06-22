@@ -15,14 +15,38 @@ import (
 
 const maxBodyBytes = 64 << 10 // 64 KB — turn jobs are small.
 
-// Handler decodes a TurnJob and invokes the processor.
+// Handler decodes a TurnJob and invokes the processor. Its turn route is bearer-
+// authenticated when an auth token is configured (see TurnRoute / requireBearer).
 type Handler struct {
 	processor ports.TurnProcessor
+	auth      authConfig
 }
 
-// NewHandler constructs the worker HTTP handler bound to a turn processor.
+// NewHandler constructs the worker HTTP handler bound to a turn processor, with the
+// push endpoint UNAUTHENTICATED. Prefer NewAuthenticatedHandler in real wirings so
+// the Cloud Tasks push (which already sends the bearer token) is verified.
 func NewHandler(processor ports.TurnProcessor) *Handler {
 	return &Handler{processor: processor}
+}
+
+// NewAuthenticatedHandler constructs the worker HTTP handler with a shared-secret
+// bearer token (WORKER_AUTH_TOKEN, threaded from the composition root). An empty
+// token disables the check (local/dev), in which case the caller MUST emit the
+// startup warning (see WorkerAuthConfigured / cmd/worker).
+func NewAuthenticatedHandler(processor ports.TurnProcessor, token string) *Handler {
+	return &Handler{processor: processor, auth: authConfig{token: token}}
+}
+
+// AuthConfigured reports whether the push endpoint requires a bearer token. The
+// composition root uses it to decide whether to log the "unauthenticated" startup
+// warning.
+func (h *Handler) AuthConfigured() bool { return h.auth.token != "" }
+
+// TurnRoute returns the HTTP handler for POST /worker/turn with bearer auth
+// applied (a no-op when no token is configured). Register THIS, not ServeHTTP,
+// so the auth guard is always in front of the processor.
+func (h *Handler) TurnRoute() http.HandlerFunc {
+	return requireBearer(h.auth, h.ServeHTTP)
 }
 
 // ServeHTTP handles POST /worker/turn.

@@ -90,6 +90,9 @@ func (m *mockMsgRepo) SeenProviderMsg(ctx context.Context, providerMsgID string)
 func (m *mockMsgRepo) ClaimProviderMsg(ctx context.Context, conversationID, providerMsgID, content string) (bool, error) {
 	return true, nil
 }
+func (m *mockMsgRepo) CountByConversationRole(ctx context.Context, conversationID, role string) (int, error) {
+	return 0, nil
+}
 
 type mockCompanyRepo struct {
 	byCUI    map[string]*domain.Company
