@@ -29,6 +29,14 @@ const STATUS_VALUES = [
 
 const VERTICAL_VALUES = ['angrosist', 'palletclearance', 'skalyou'] as const
 
+/** Canonical VAT statuses → their localized dictionary keys. */
+const VAT_LABEL_KEY: Record<string, TKey> = {
+  active: 'companies.vatActive',
+  inactive: 'companies.vatInactive',
+  not_registered: 'companies.vatNotRegistered',
+  unknown: 'companies.vatUnknown',
+}
+
 /** Company roles in directory order, used for the role filter Select. */
 const ROLE_VALUES = [
   'distributor',
@@ -69,6 +77,12 @@ export function useEnums() {
         translate(lang, `status.${status}` as TKey),
       verticalLabel: (v: string) => translate(lang, `vertical.${v}` as TKey),
       roleLabel: (r: string) => translate(lang, `role.${r}` as TKey),
+      /**
+       * Localized VAT-status label. Maps active/inactive/not_registered/unknown
+       * to RO/EN words; any unrecognized/empty value falls back to "unknown".
+       */
+      vatLabel: (s: string | null | undefined) =>
+        translate(lang, VAT_LABEL_KEY[s ?? ''] ?? 'companies.vatUnknown'),
     }),
     [lang],
   )

@@ -474,18 +474,49 @@ export async function listCompanies(
   return authedFetch<CompanyListPage>(`/companies${qs ? `?${qs}` : ''}`)
 }
 
+/**
+ * CompanyFinancialView mirrors domain.CompanyFinancialView. One year's snapshot.
+ * turnover/net_profit/employees are nullable on the wire = "not reported".
+ * Newest-first as returned by the backend.
+ */
 export interface CompanyFinancialView {
   year: number
   turnover: number | null
+  net_profit: number | null
+  employees: number | null
+  caen_description?: string
 }
+
+/**
+ * An administrator may arrive as a bare name string or as an object carrying a
+ * `name` field — the UI normalizes both (see administratorName()).
+ */
+export type CompanyAdministrator = string | { name?: string }
 
 /** CompanyDetail mirrors domain.CompanyDetail / openapi CompanyDetail. */
 export interface CompanyDetail extends CompanySummary {
   address?: string
   county?: string
+  /** ONRC J-number (e.g. "J40/372/2002"); may be absent. */
+  registration_number?: string
+  /** Incorporation date (ISO); null/absent when unknown. */
+  registration_date?: string | null
+  /** Legal form (SA / SRL / ...). */
+  legal_form?: string
+  /** e-Factura (e-invoicing) registration flag. */
+  e_factura?: boolean
+  /** All permitted activity codes when available. */
+  authorized_caen?: string[]
+  /** Administrator names (string[] or object[] — normalize before display). */
+  administrators?: CompanyAdministrator[]
   is_active?: boolean
   verification?: CompanyVerificationView | null
   financials?: CompanyFinancialView[]
+}
+
+/** Normalizes an administrator entry (string or {name}) to a display string. */
+export function administratorName(a: CompanyAdministrator): string {
+  return typeof a === 'string' ? a : (a?.name ?? '')
 }
 
 export async function getCompany(id: string): Promise<CompanyDetail> {
