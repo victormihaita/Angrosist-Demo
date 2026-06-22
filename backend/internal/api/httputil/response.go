@@ -96,7 +96,7 @@ func resolveCORSOrigin(allowed []string, requestOrigin string) (value string, va
 // configured allowlist. With "*" it echoes a wildcard; otherwise it echoes the
 // request Origin only when it is allowed (and sets Vary: Origin).
 func ApplyCORS(w http.ResponseWriter, r *http.Request) {
-	w.Header().Set("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
+	w.Header().Set("Access-Control-Allow-Methods", "GET, POST, PATCH, OPTIONS")
 	w.Header().Set("Access-Control-Allow-Headers", "Content-Type")
 
 	value, vary := resolveCORSOrigin(allowedOrigins(), r.Header.Get("Origin"))

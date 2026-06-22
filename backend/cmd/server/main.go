@@ -38,9 +38,9 @@ func main() {
 
 	// Authenticated dashboard DATA endpoints (M3 Epic 3.3 part 2): leads pipeline,
 	// lead detail, offer tracking, assignment, B2B directory, handoff queue, KPIs.
-	// Every route is mounted behind the staff bearer-token middleware. These
-	// supersede the unauth demo /api/leads handlers (the Vercel api/ handlers
-	// remain for the demo deployment).
+	// Every route is mounted behind the staff bearer-token middleware. The legacy
+	// unauthenticated /api/leads demo handlers were removed (M5 security pass);
+	// Vercel now serves only the public widget API (chat/health).
 	app.GetContainer().Dashboard.Register(mux, authSvc.Auth.Require)
 
 	// Document upload (M3 Epic 3.2): validated multipart upload behind the staff

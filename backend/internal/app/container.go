@@ -428,10 +428,11 @@ func bootstrapAdmin(ctx context.Context, users ports.UserRepo) {
 		PasswordHash: hash,
 	}
 	if err := users.UpsertByEmail(ctx, admin); err != nil {
-		log.Printf("bootstrap admin: upsert %s: %v", email, err)
+		log.Printf("bootstrap admin: upsert failed: %v", err)
 		return
 	}
-	log.Printf("bootstrap admin: ensured admin user %s", email)
+	// Don't log the email (PII, SECURITY.md §8) — just that the bootstrap ran.
+	log.Printf("bootstrap admin: ensured admin user from ADMIN_EMAIL")
 }
 
 func findEnvFile() string {

@@ -2,6 +2,7 @@ package handler
 
 import (
 	"encoding/json"
+	"log"
 	"net/http"
 	"strings"
 
@@ -67,7 +68,10 @@ func Handler(w http.ResponseWriter, r *http.Request) {
 
 	resp, err := app.GetContainer().Chat.RunTurn(ctx, req)
 	if err != nil {
-		httputil.WriteError(w, http.StatusInternalServerError, "agent error: "+err.Error())
+		// Log the detail server-side; return a generic message so internal error
+		// text (DB/LLM/host fragments) never reaches an unauthenticated caller.
+		log.Printf("chat: agent turn failed: %v", err)
+		httputil.WriteError(w, http.StatusInternalServerError, "agent error")
 		return
 	}
 

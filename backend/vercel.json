@@ -1,18 +1,6 @@
 {
   "routes": [
-    { "src": "/api/health",        "dest": "/api/health/index.go" },
-    { "src": "/api/chat",          "dest": "/api/chat/index.go" },
-    { "src": "/api/leads/([^/]+)", "dest": "/api/leads/detail/index.go" },
-    { "src": "/api/leads",         "dest": "/api/leads/index.go" }
-  ],
-  "headers": [
-    {
-      "source": "/api/(.*)",
-      "headers": [
-        { "key": "Access-Control-Allow-Origin",  "value": "*" },
-        { "key": "Access-Control-Allow-Methods", "value": "GET, POST, OPTIONS" },
-        { "key": "Access-Control-Allow-Headers", "value": "Content-Type" }
-      ]
-    }
+    { "src": "/api/health", "dest": "/api/health/index.go" },
+    { "src": "/api/chat",   "dest": "/api/chat/index.go" }
   ]
 }
