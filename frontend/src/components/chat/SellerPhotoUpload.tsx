@@ -34,6 +34,8 @@ interface PhotoItem {
 
 interface Props {
   conversationId: string | null
+  /** Per-conversation ownership token; echoed on upload or the backend 403s. */
+  conversationToken: string | null
   /** Localized label for the trigger button. */
   label?: string
 }
@@ -44,7 +46,11 @@ function nextId(): string {
   return `photo-${counter}-${Date.now()}`
 }
 
-export function SellerPhotoUpload({ conversationId, label }: Props) {
+export function SellerPhotoUpload({
+  conversationId,
+  conversationToken,
+  label,
+}: Props) {
   const { t } = useT()
   const inputRef = useRef<HTMLInputElement>(null)
   const [items, setItems] = useState<PhotoItem[]>([])
@@ -83,7 +89,11 @@ export function SellerPhotoUpload({ conversationId, label }: Props) {
 
         void (async () => {
           try {
-            const res = await uploadConversationPhoto(conversationId, file)
+            const res = await uploadConversationPhoto(
+              conversationId,
+              file,
+              conversationToken,
+            )
             updateItem(localId, { status: 'done', remoteUrl: res.url })
           } catch (err) {
             const message =
@@ -94,7 +104,7 @@ export function SellerPhotoUpload({ conversationId, label }: Props) {
         })()
       })
     },
-    [conversationId, updateItem, t],
+    [conversationId, conversationToken, updateItem, t],
   )
 
   return (

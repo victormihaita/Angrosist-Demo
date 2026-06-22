@@ -63,7 +63,8 @@ function resolveFlowKey(params: URLSearchParams): FlowKey {
 function ChatSurface({ flowKey }: { flowKey: FlowKey }) {
   const { t } = useT()
   const flow = FLOW_META[flowKey]
-  const { messages, typing, send, conversationId, intent } = useChat({
+  const { messages, typing, send, conversationId, conversationToken, intent } =
+    useChat({
     // Separate storage per flow so switching doesn't resume the wrong conversation.
     convStorageKey: `${CONV_KEY}_${flowKey}`,
     greeting: t(flow.greetingKey),
@@ -98,6 +99,7 @@ function ChatSurface({ flowKey }: { flowKey: FlowKey }) {
         <div className="shrink-0 max-w-2xl w-full mx-auto">
           <SellerPhotoUpload
             conversationId={conversationId}
+            conversationToken={conversationToken}
             label={t('chat.addPhotos')}
           />
         </div>

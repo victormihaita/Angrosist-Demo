@@ -33,6 +33,12 @@ export interface ExtractedFields {
 
 export interface ChatResponse {
   conversation_id: string
+  /**
+   * Per-conversation ownership token issued on EVERY turn (incl. the first).
+   * Continuing turns, the SSE stream, and seller-photo uploads must echo it back
+   * (header / query / form field) or the backend returns 403.
+   */
+  conversation_token: string
   reply: string
   state: string
   extracted: ExtractedFields
@@ -65,13 +71,20 @@ export async function sendMessage(
   conversationId: string | null,
   message: string,
   flow?: ChatFlow,
+  token?: string | null,
 ): Promise<ChatResponse> {
   // vertical/intent are only sent on the first message (no conversation id yet);
   // sending them later is harmless but the backend pins the flow on creation.
   const isFirst = !conversationId
+
+  const headers: Record<string, string> = { 'Content-Type': 'application/json' }
+  // Continuing turns MUST prove conversation ownership; the first turn has no
+  // token yet (the backend issues one in the response).
+  if (!isFirst && token) headers['X-Conversation-Token'] = token
+
   const res = await fetch(`${getApiBase()}/api/chat`, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers,
     body: JSON.stringify({
       conversation_id: conversationId ?? undefined,
       message,
@@ -92,22 +105,31 @@ export interface ConversationPhoto {
 
 /**
  * Uploads one seller photo to a PalletClearance/sell conversation via the PUBLIC
- * multipart endpoint (no auth header). Surfaces backend `{error:{code,message}}`
- * messages — incl. 409 (per-conversation cap) and 400 (non-image / oversize) —
- * as a thrown {@link ApiError} so the UI can show the exact reason.
+ * multipart endpoint. Carries the per-conversation ownership token (no staff
+ * auth header) via `X-Conversation-Token` plus a `token` form field. Surfaces
+ * backend `{error:{code,message}}` messages — incl. 403 (missing/invalid token),
+ * 409 (per-conversation cap) and 400 (non-image / oversize) — as a thrown
+ * {@link ApiError} so the UI can show the exact reason.
  */
 export async function uploadConversationPhoto(
   conversationId: string,
   file: File,
+  token?: string | null,
 ): Promise<ConversationPhoto> {
   const form = new FormData()
   form.append('file', file)
+  // Prove conversation ownership (header preferred; form field as a belt-and-
+  // braces fallback). Without it the backend 403s in addition to seller scoping.
+  if (token) form.append('token', token)
+
+  const headers: Record<string, string> = {}
+  if (token) headers['X-Conversation-Token'] = token
 
   const res = await fetch(
     `${getApiBase()}/api/conversations/${encodeURIComponent(
       conversationId,
     )}/photos`,
-    { method: 'POST', body: form },
+    { method: 'POST', headers, body: form },
   )
 
   if (!res.ok) {
@@ -531,6 +553,12 @@ export interface StreamHandlers {
 }
 
 export interface StreamOptions {
+  /**
+   * Per-conversation ownership token. EventSource can't set request headers, so
+   * it travels as a `&token=` query param. Required by the backend or the stream
+   * 403s.
+   */
+  token?: string | null
   /** Custom EventSource factory (testing). Defaults to the global EventSource. */
   eventSourceFactory?: (url: string) => EventSource
 }
@@ -557,9 +585,11 @@ export function subscribeToConversation(
   handlers: StreamHandlers,
   options?: StreamOptions,
 ): () => void {
-  const url = `${getApiBase()}/api/stream?conversation_id=${encodeURIComponent(
-    conversationId,
-  )}`
+  const url =
+    `${getApiBase()}/api/stream?conversation_id=${encodeURIComponent(
+      conversationId,
+    )}` +
+    (options?.token ? `&token=${encodeURIComponent(options.token)}` : '')
   const es = options?.eventSourceFactory
     ? options.eventSourceFactory(url)
     : new EventSource(url)

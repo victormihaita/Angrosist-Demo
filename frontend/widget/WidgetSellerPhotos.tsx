@@ -18,6 +18,8 @@ interface PhotoItem {
 
 interface Props {
   conversationId: string | null
+  /** Per-conversation ownership token; echoed on upload or the backend 403s. */
+  conversationToken: string | null
 }
 
 let counter = 0
@@ -26,7 +28,7 @@ function nextId(): string {
   return `wphoto-${counter}-${Date.now()}`
 }
 
-export function WidgetSellerPhotos({ conversationId }: Props) {
+export function WidgetSellerPhotos({ conversationId, conversationToken }: Props) {
   const inputRef = useRef<HTMLInputElement>(null)
   const [items, setItems] = useState<PhotoItem[]>([])
   const [error, setError] = useState<string | null>(null)
@@ -60,7 +62,7 @@ export function WidgetSellerPhotos({ conversationId }: Props) {
 
         void (async () => {
           try {
-            await uploadConversationPhoto(conversationId, file)
+            await uploadConversationPhoto(conversationId, file, conversationToken)
             updateItem(localId, { status: 'done' })
           } catch (err) {
             const message =
@@ -73,7 +75,7 @@ export function WidgetSellerPhotos({ conversationId }: Props) {
         })()
       })
     },
-    [conversationId, updateItem],
+    [conversationId, conversationToken, updateItem],
   )
 
   return (

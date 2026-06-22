@@ -35,6 +35,11 @@ interface UseChatResult {
   send: (text: string) => void
   /** The active conversation id once the first message has been sent (else null). */
   conversationId: string | null
+  /**
+   * Per-conversation ownership token from the latest chat response (null before
+   * the first reply). The seller-photo control echoes it back on upload.
+   */
+  conversationToken: string | null
   /** Resolved vertical the UI can branch on (defaults to angrosist). */
   vertical: ChatVertical
   /** Resolved intent the UI can branch on (defaults to buy). */
@@ -77,8 +82,16 @@ export function useChat({
   const [conversationId, setConversationId] = useState<string | null>(
     () => sessionStorage.getItem(convStorageKey),
   )
+  // The per-conversation ownership token, mirrored to state so the seller-photo
+  // control can read it. Persisted alongside the id so a reload that resumes the
+  // conversation can still authorize continuing turns / SSE before the next reply.
+  const tokenStorageKey = `${convStorageKey}_token`
+  const [conversationToken, setConversationToken] = useState<string | null>(
+    () => sessionStorage.getItem(tokenStorageKey),
+  )
 
   const convIdRef = useRef<string | null>(sessionStorage.getItem(convStorageKey))
+  const tokenRef = useRef<string | null>(sessionStorage.getItem(tokenStorageKey))
   const unsubscribeRef = useRef<(() => void) | null>(null)
   const sseOpenRef = useRef(false)
 
@@ -110,30 +123,38 @@ export function useChat({
   const ensureSubscription = useCallback(
     (conversationId: string) => {
       if (unsubscribeRef.current) return
-      unsubscribeRef.current = subscribeToConversation(conversationId, {
-        onOpen: () => {
-          sseOpenRef.current = true
+      unsubscribeRef.current = subscribeToConversation(
+        conversationId,
+        {
+          onOpen: () => {
+            sseOpenRef.current = true
+          },
+          onTyping: () => setTyping(true),
+          onMessage: (msg) => {
+            // SSE won the race: drop the buffered POST reply for this turn so we
+            // don't double-render, then render the streamed reply.
+            pendingPostReplyRef.current = null
+            if (fallbackTimerRef.current) {
+              clearTimeout(fallbackTimerRef.current)
+              fallbackTimerRef.current = null
+            }
+            appendAssistant(msg)
+          },
+          onError: () => {
+            // SSE failed for this turn — fall back to the POST reply if buffered.
+            if (pendingPostReplyRef.current) {
+              flushPostFallback()
+            } else {
+              setTyping(false)
+            }
+          },
         },
-        onTyping: () => setTyping(true),
-        onMessage: (msg) => {
-          // SSE won the race: drop the buffered POST reply for this turn so we
-          // don't double-render, then render the streamed reply.
-          pendingPostReplyRef.current = null
-          if (fallbackTimerRef.current) {
-            clearTimeout(fallbackTimerRef.current)
-            fallbackTimerRef.current = null
-          }
-          appendAssistant(msg)
+        {
+          // Captured from the chat response just before this call; the backend
+          // 403s the stream without it (EventSource can't send headers).
+          token: tokenRef.current,
         },
-        onError: () => {
-          // SSE failed for this turn — fall back to the POST reply if buffered.
-          if (pendingPostReplyRef.current) {
-            flushPostFallback()
-          } else {
-            setTyping(false)
-          }
-        },
-      })
+      )
     },
     [appendAssistant, flushPostFallback],
   )
@@ -149,13 +170,24 @@ export function useChat({
       void (async () => {
         try {
           // vertical/intent are only honored on the first message (no id yet).
-          const resp = await sendMessage(convIdRef.current, text, {
-            vertical,
-            intent,
-          })
+          // The token (null on the first turn) authorizes continuing turns.
+          const resp = await sendMessage(
+            convIdRef.current,
+            text,
+            { vertical, intent },
+            tokenRef.current,
+          )
           convIdRef.current = resp.conversation_id
           setConversationId(resp.conversation_id)
           sessionStorage.setItem(convStorageKey, resp.conversation_id)
+
+          // Capture the ownership token issued on EVERY turn. Read it back into
+          // refs/state/storage BEFORE opening SSE so the stream gets `?token=`.
+          if (resp.conversation_token) {
+            tokenRef.current = resp.conversation_token
+            setConversationToken(resp.conversation_token)
+            sessionStorage.setItem(tokenStorageKey, resp.conversation_token)
+          }
 
           // Open SSE once we have a conversation id; reuse for later turns.
           ensureSubscription(resp.conversation_id)
@@ -195,6 +227,7 @@ export function useChat({
     [
       typing,
       convStorageKey,
+      tokenStorageKey,
       ensureSubscription,
       flushPostFallback,
       errorMessage,
@@ -212,5 +245,14 @@ export function useChat({
     }
   }, [])
 
-  return { messages, typing, extracted, send, conversationId, vertical, intent }
+  return {
+    messages,
+    typing,
+    extracted,
+    send,
+    conversationId,
+    conversationToken,
+    vertical,
+    intent,
+  }
 }

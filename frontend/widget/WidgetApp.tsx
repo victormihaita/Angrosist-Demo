@@ -23,6 +23,7 @@ export function WidgetApp({ apiUrl, vertical, intent, onClose }: Props) {
     extracted: _extracted,
     send,
     conversationId,
+    conversationToken,
     intent: resolvedIntent,
   } = useChat({
     // Per-flow storage so a buyer and a seller session don't collide on the host.
@@ -134,7 +135,10 @@ export function WidgetApp({ apiUrl, vertical, intent, onClose }: Props) {
 
       {/* Seller-only photo control (PalletClearance/sell). Hidden otherwise. */}
       {resolvedIntent === 'sell' && (
-        <WidgetSellerPhotos conversationId={conversationId} />
+        <WidgetSellerPhotos
+          conversationId={conversationId}
+          conversationToken={conversationToken}
+        />
       )}
 
       {/* Input */}
